@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Duo – zusammen fitter</title>
+  <meta name="description" content="Fitness-Challenges für euch zwei">
+  <meta name="theme-color" content="#ff6b4a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Duo">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app"><div class="gate"><div class="logo">Duo<span>.</span></div><div class="spinner"></div></div></div>
+  <div id="sheet" class="sheet"></div>
+  <div id="toasts" class="toasts"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
