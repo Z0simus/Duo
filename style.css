@@ -300,3 +300,38 @@ textarea:focus { border-color: var(--accent); }
 .sportcta > span { font-size: 32px; }
 .sportcta div { flex: 1; } .sportcta small { display: block; color: var(--muted); font-size: 13px; }
 .sportcta i { font-style: normal; font-weight: 800; color: var(--accent2); }
+.player.stretch { background: linear-gradient(160deg, #0d9488, #22c1a8); }
+.wcard.calm { background: linear-gradient(135deg, var(--card), color-mix(in srgb, #14b8a6 10%, var(--card))); }
+.mini.wide { width: 100%; height: 8px; margin: 8px 0; }
+.sets { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.setrow { display: flex !important; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: var(--bg); margin: 0 !important; color: var(--text) !important; font-size: 15px !important; }
+.setrow input { width: 22px; height: 22px; accent-color: var(--green); }
+.setrow span { flex: 1; color: var(--muted); }
+.setrow:has(input:checked) { background: color-mix(in srgb, var(--green) 14%, var(--card)); }
+.setrow:has(input:checked) b { text-decoration: line-through; opacity: .7; }
+.event { border: 2px solid color-mix(in srgb, var(--red) 25%, transparent); }
+.event.teaser { font-size: 15px; }
+.tip p { font-size: 15px; margin: 8px 0 4px; }
+.tip.rest { background: linear-gradient(135deg, var(--card), color-mix(in srgb, var(--green) 9%, var(--card))); }
+.reviewcard { border: 2px solid color-mix(in srgb, var(--purple) 30%, transparent); }
+.mvp { font-size: 16px; text-align: center; padding: 8px; border-radius: 12px; background: color-mix(in srgb, var(--accent2) 15%, var(--card)); margin: 8px 0; }
+.review { display: flex; gap: 8px; margin: 8px 0; }
+.review > div { flex: 1; text-align: center; border-radius: 14px; padding: 10px 6px; }
+.review > .me { background: var(--me-soft); } .review > .pa { background: var(--pa-soft); }
+.review span { font-size: 28px; display: block; } .review b { font-size: 24px; display: block; } .review small { color: var(--muted); font-size: 12px; }
+.review ul { list-style: none; padding: 0; margin: 6px 0 0; font-size: 12px; text-align: left; } .review li { margin: 2px 0; }
+.link.inline { margin: 0; font-size: 12px; padding: 0; }
+.reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; align-items: center; }
+.reacts i { font-style: normal; font-size: 13px; background: var(--bg); border-radius: 99px; padding: 1px 7px; }
+.reacts em { font-style: normal; font-size: 11px; margin-left: 2px; }
+.rbtn { border: 1px dashed var(--line); background: none; border-radius: 99px; font-size: 12px; padding: 1px 8px; color: var(--muted); cursor: pointer; }
+.rpick { display: flex; gap: 4px; margin-top: 6px; }
+.rpick button { border: 0; background: var(--bg); border-radius: 12px; font-size: 22px; padding: 4px 8px; cursor: pointer; }
+.porth { display: flex; align-items: center; justify-content: space-between; }
+.stepper { display: inline-flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 12px; padding: 3px; }
+.stepper button { border: 0; background: var(--card); width: 32px; height: 32px; border-radius: 9px; font-size: 18px; font-weight: 700; cursor: pointer; }
+.stepper b { font-size: 14px; min-width: 88px; text-align: center; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.chip.check input { display: none; }
+.chip.check:has(input:checked) { border-color: var(--red); color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--card)); }
+.form .chip.check { display: inline-block; margin: 0; font-size: 14px; color: var(--text); font-weight: 400; }

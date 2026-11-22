@@ -35,9 +35,11 @@ function timeAgo(iso) {
   return `${t.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })} ${hm}`;
 }
 
-const POINTS = { daily: 15, habit: 10, workout: 25, sport: 20, log: 5, custom: 5, joker: 0 };
+const POINTS = { daily: 15, habit: 10, workout: 25, sport: 20, program: 25, event: 15, log: 5, custom: 5, joker: 0 };
 // Zählt ein Eintrag zu einer Summen-Metrik? (Übungen, Aktivitäten, eigene Sportart = 'sport')
-const inSum = (r, keys) => ((r.kind === 'daily' || r.kind === 'log') && keys.includes(r.key)) || (r.kind === 'sport' && keys.includes('sport'));
+const inSum = (r, keys) => ((r.kind === 'daily' || r.kind === 'log' || r.kind === 'program') && keys.includes(r.key)) || (r.kind === 'sport' && keys.includes('sport'));
+const SPORT_KINDS = ['workout', 'sport', 'program'];
+const isStretchRow = r => (r.kind === 'workout' && ['stretch', 'morning'].includes(r.key)) || (r.kind === 'log' && r.key === 'yoga') || (r.kind === 'daily' && r.key === 'stretch');
 const LEVEL_XP = 150;
 
 // ================================================================
@@ -72,6 +74,8 @@ function niceTarget(base, date) {
 }
 
 function dailyChallenge(date = today()) {
+  if (parseD(date).getDay() === 0) return { key: 'stretch', stretch: true, amount: 0, title: 'Dehn-Sonntag: 10 Minuten dehnen',
+    ex: { emoji: '🧘', how: 'Mach die Routine „Dehnen & Entspannen“ (wird automatisch abgehakt) oder 10 Minuten freies Dehnen.', easier: 'Die „Morgen-Mobility“ (6 Min.) zählt auch.' } };
   const pool = D.DAILY_POOL;
   let k = pick(pool, S.couple.id + '|d|' + date);
   if (k === pick(pool, S.couple.id + '|d|' + addDays(date, -1))) k = pool[(pool.indexOf(k) + 1) % pool.length];
@@ -99,6 +103,7 @@ const rowsInWeek = (wk) => { const end = addDays(wk, 6); return S.completions.fi
 function metricValue(m, rows) {
   if (m === 'activeDays') return new Set(rows.filter(r => r.kind !== 'joker').map(r => r.user_id + '|' + r.date)).size;
   if (m.count) return rows.filter(r => m.count.includes(r.kind)).length;
+  if (m.countKeys) return rows.filter(isStretchRow).length;
   if (m.sum) return rows.filter(r => inSum(r, m.sum))
     .reduce((a, r) => a + Number(r.amount || 0), 0);
   return 0;
@@ -134,7 +139,7 @@ function weekResults() {
     const vals = ids.map(id => id ? metricValue(duel.metric, rows.filter(r => r.user_id === id)) : 0);
     const finished = addDays(wk, 6) < today();
     let winner = null;
-    if (finished && S.partner) winner = vals[0] > vals[1] ? S.me.id : vals[1] > vals[0] ? S.partner.id : 'tie';
+    if (finished && S.partner && (vals[0] || vals[1])) winner = vals[0] > vals[1] ? S.me.id : vals[1] > vals[0] ? S.partner.id : 'tie';
     return { wk, goal, goalVal, goalDone: goalVal >= goal.target, duel, vals, finished, winner };
   });
 }
@@ -171,7 +176,9 @@ function computeStats() {
       squats: sum(['squats']), pushups: sum(['pushups']), plank: sum(['plank']),
       move: sum(['walk', 'run', 'bike', 'swim', 'dance', 'yoga', 'sport']),
       sportKinds: new Set(own.filter(r => r.kind === 'sport').map(r => String(r.label || '').toLowerCase())).size,
-      workouts: count('workout') + count('sport'), habits: count('habit'), dailies: count('daily'),
+      workouts: count('workout') + count('sport') + count('program'),
+      stretches: own.filter(isStretchRow).length, events: count('event'),
+      programsDone: own.filter(r => r.kind === 'program' && (D.PROGRAMS.find(p => p.id === r.prog)?.weeks * 3) === r.session).length, habits: count('habit'), dailies: count('daily'),
       total: own.filter(r => r.kind !== 'joker').length,
       early: hours.some(h => h < 8), late: hours.some(h => h >= 21),
       goals, duelsWon, weights: S.weights.filter(w => w.user_id === u.id).length,
@@ -184,6 +191,9 @@ function computeStats() {
 const BADGES = [
   { id: 'first', emoji: '👣', name: 'Erster Schritt', desc: 'Erste Aktivität eingetragen', ok: s => s.total >= 1 },
   { id: 'wo1', emoji: '🏋️', name: 'Los geht\'s', desc: 'Erste Sporteinheit', ok: s => s.workouts >= 1 },
+  { id: 'str10', emoji: '🧘', name: 'Gelenkig', desc: '10× gedehnt (Routine, Yoga, Dehn-Sonntag)', ok: s => s.stretches >= 10 },
+  { id: 'prog', emoji: '🎓', name: 'Durchgezogen', desc: 'Ein Programm komplett geschafft', ok: s => s.programsDone >= 1 },
+  { id: 'evt10', emoji: '🎁', name: 'Festtags-Form', desc: '10 Event-Challenges geschafft', ok: s => s.events >= 10 },
   { id: 'multi', emoji: '🏅', name: 'Allrounder', desc: '3 verschiedene eigene Sportarten', ok: s => s.sportKinds >= 3 },
   { id: 'wo10', emoji: '🎖️', name: 'Routine', desc: '10 Workouts', ok: s => s.workouts >= 10 },
   { id: 'wo50', emoji: '🏅', name: 'Maschine', desc: '50 Workouts', ok: s => s.workouts >= 50 },
@@ -206,9 +216,119 @@ const BADGES = [
 ];
 
 // ================================================================
+//  Saison-Events & Wochenrückblick
+// ================================================================
+function activeEvent(date = today()) {
+  const md = date.slice(5), y = date.slice(0, 4);
+  for (const e of D.EVENTS) if (md >= e.start && md <= e.end) {
+    const idx = daysBetween(`${y}-${e.start}`, date);
+    return { e, idx, n: idx + 1, key: `${e.id}-${y}-${idx + 1}`, text: e.items[idx] };
+  }
+  return null;
+}
+function upcomingEvent() {
+  for (let d = 1; d <= 10; d++) { const ev = activeEvent(addDays(today(), d)); if (ev && ev.idx === 0) return { ...ev, inDays: d }; }
+  return null;
+}
+function eventOfKey(key) {
+  const m = String(key || '').match(/^([a-z]+)-(\d{4})-(\d+)$/); if (!m) return null;
+  const e = D.EVENTS.find(x => x.id === m[1]); if (!e) return null;
+  return { e, n: +m[3], text: e.items[+m[3] - 1] || '' };
+}
+function eventCard() {
+  const ev = activeEvent();
+  if (!ev) {
+    const up = upcomingEvent();
+    return up ? `<div class="card event teaser">${up.e.emoji} <b>In ${up.inDays} ${up.inDays === 1 ? 'Tag' : 'Tagen'} startet: ${esc(up.e.name)}!</b><br><span class="muted small">Jeden Tag eine kleine Überraschungs-Challenge für euch zwei.</span></div>` : '';
+  }
+  const t = today(), y = t.slice(0, 4);
+  const doneBy = uid => S.completions.find(r => r.user_id === uid && r.kind === 'event' && r.key === ev.key);
+  const count = uid => S.completions.filter(r => r.user_id === uid && r.kind === 'event' && String(r.key).startsWith(`${ev.e.id}-${y}-`)).length;
+  const mine = doneBy(S.user.id), pa = S.partner && doneBy(S.partner.id);
+  return `<div class="card challenge event ${mine ? 'is-done' : ''}">
+    <div class="card-h"><span class="tag red">${ev.e.emoji} ${esc(ev.e.name)}</span><span class="pts">+${POINTS.event}</span></div>
+    <h2>${esc(ev.e.door)} ${ev.n}: ${esc(ev.text)}</h2>
+    <div class="status"><span class="who me">${mine ? '✅' : '⏳'} Du · ${count(S.user.id)}/${ev.n}</span>
+      ${S.partner ? `<span class="who pa">${pa ? '✅' : '⏳'} ${esc(S.partner.name)} · ${count(S.partner.id)}/${ev.n}</span>` : ''}</div>
+    ${mine ? `<button class="btn ghost small" data-act="undo" data-id="${mine.id}">Rückgängig</button>` : `<button class="btn" data-act="doEvent">Geschafft! 🎁</button>`}
+  </div>`;
+}
+
+function weekReview(wk) {
+  const rows = rowsInWeek(wk), res = weekResults().find(w => w.wk === wk);
+  if (!res) return null;
+  const users = [S.me, S.partner].filter(Boolean);
+  const per = {};
+  const bothDaily = S.partner ? [...new Set(rows.filter(r => r.kind === 'daily').map(r => r.date))]
+    .filter(d => users.every(u => rows.some(r => r.kind === 'daily' && r.date === d && r.user_id === u.id))).length : 0;
+  for (const u of users) {
+    const own = rows.filter(r => r.user_id === u.id);
+    const pts = own.reduce((a, r) => a + (r.points || 0), 0) + bothDaily * 10 + (res.goalDone ? 50 : 0)
+      + (res.winner === u.id ? 30 : res.winner === 'tie' ? 15 : 0);
+    const kinds = {}; own.filter(r => r.kind === 'sport').forEach(r => kinds[r.label] = (kinds[r.label] || 0) + 1);
+    per[u.id] = { pts, active: new Set(own.filter(r => r.kind !== 'joker').map(r => r.date)).size,
+      units: own.filter(r => SPORT_KINDS.includes(r.kind)).length,
+      move: own.filter(r => inSum(r, ['walk', 'run', 'bike', 'swim', 'dance', 'yoga', 'sport'])).reduce((a, r) => a + Number(r.amount || 0), 0),
+      stretch: own.filter(isStretchRow).length };
+  }
+  const prevRows = rowsInWeek(addDays(wk, -7));
+  const team = Object.values(per).reduce((a, p) => a + p.pts, 0), prevTeam = prevRows.reduce((a, r) => a + (r.points || 0), 0);
+  const mvp = S.partner ? (per[S.me.id].pts > per[S.partner.id].pts ? S.me.id : per[S.partner.id].pts > per[S.me.id].pts ? S.partner.id : 'tie') : S.me.id;
+  return { wk, res, per, team, prevTeam, mvp, bothDaily };
+}
+function reviewHtml(wk) {
+  const R = weekReview(wk); if (!R) return '<p class="muted">Keine Daten für diese Woche.</p>';
+  const { res, per } = R; const ids = [S.me.id, S.partner?.id].filter(Boolean);
+  const col = (id) => `<div class="${cls(id)}"><span>${esc(avatarOf(id))}</span><b>${fmtNum(per[id].pts)}</b><small>Punkte</small>
+    <ul><li>📅 ${per[id].active} aktive Tage</li><li>🏋️ ${per[id].units} Sporteinheiten</li><li>🚶 ${fmtNum(per[id].move)} Min. Bewegung</li><li>🧘 ${per[id].stretch}× gedehnt</li></ul></div>`;
+  const trend = R.prevTeam ? Math.round((R.team - R.prevTeam) / R.prevTeam * 100) : null;
+  return `<p class="muted small">${fmtDay(wk)} – ${fmtDay(addDays(wk, 6))}</p>
+    ${!R.team ? '<div class="mvp">😴 Ruhige Woche – die nächste wird besser! 💪</div>' : R.mvp !== 'tie' && S.partner ? `<div class="mvp">🏆 Spieler/in der Woche: <b>${esc(nameOf(R.mvp) === 'Du' ? 'Du!' : nameOf(R.mvp))}</b></div>` : S.partner ? '<div class="mvp">🤝 Punktgleich – perfektes Team!</div>' : ''}
+    <div class="review">${ids.map(col).join('')}</div>
+    <p>⚔️ <b>Duell:</b> ${esc(res.duel.title)} – ${fmtNum(res.vals[0])} : ${fmtNum(res.vals[1])}
+      ${res.winner === 'tie' ? '· Unentschieden 🤝' : res.winner ? `· Sieg für <b>${esc(nameOf(res.winner))}</b> 🏆` : ''}</p>
+    ${res.winner && res.winner !== 'tie' && cs().stake ? `<p class="small">💸 Einsatz fällig: <b>${esc(cs().stake)}</b></p>` : ''}
+    <p>🎯 <b>Wochenziel:</b> ${esc(res.goal.title)} – ${res.goalDone ? 'geschafft ✅' : `${fmtNum(res.goalVal)}/${fmtNum(res.goal.target)} ❌`}</p>
+    ${R.bothDaily ? `<p>🤝 ${R.bothDaily}× habt ihr beide die Tages-Challenge geschafft.</p>` : ''}
+    <p class="small">${trend === null ? 'Euer erster Rückblick – weiter so! 💪' : trend >= 0 ? `📈 ${trend}% mehr Punkte als in der Woche davor. Stark!` : `📉 ${Math.abs(trend)}% weniger als in der Woche davor – diese Woche holt ihr das wieder rein! 💪`}</p>`;
+}
+function reviewCard() {
+  const dow = new Date().getDay(); if (dow < 1 || dow > 3) return '';
+  const prev = addDays(weekStart(today()), -7);
+  if (prev < weekStart(coupleStart())) return '';
+  let dismissed = null; try { dismissed = localStorage.getItem('duo-review-x'); } catch {}
+  if (dismissed === prev) return '';
+  return `<div class="card reviewcard"><div class="card-h"><span class="tag purple">📅 Wochenrückblick</span><button class="x" data-act="dismissReview" data-wk="${prev}">×</button></div>${reviewHtml(prev)}</div>`;
+}
+function tipCard() {
+  const t = today();
+  const trained = d => S.completions.some(r => r.user_id === S.user.id && r.date === d && SPORT_KINDS.includes(r.kind) && !isStretchRow(r));
+  const hard = trained(addDays(t, -1)) && trained(addDays(t, -2)) && !trained(t);
+  if (hard) return `<div class="card tip rest"><div class="card-h"><span class="tag green">😌 Zeit für einen Ruhetag?</span></div>
+    <p>${esc(pick(D.REST_TIPS, 'r' + t))}</p>
+    <div class="row"><button class="btn small" data-act="workout" data-id="stretch">🧘 Dehnen starten</button><button class="btn small ghost" data-act="openJoker">🃏 Pausentag</button></div></div>`;
+  return `<div class="card tip"><span class="tag gray">💡 Tipp des Tages</span><p>${esc(pick(D.TIPS, 't' + t))}</p></div>`;
+}
+
+// ================================================================
 //  Rezepte
 // ================================================================
 const cs = () => S.couple.settings || {};
+const allRecipes = () => [...D.RECIPES, ...(cs().recipes || [])];
+let portions = 2; try { portions = Number(localStorage.getItem('duo-portions')) || 2; } catch {}
+const fmtQty = v => { if (v >= 20) return String(Math.round(v / 5) * 5); const r = Math.round(v * 4) / 4, w = Math.floor(r);
+  const f = { 0.25: '¼', 0.5: '½', 0.75: '¾' }[r - w] || ''; return ((w ? String(w) : '') + f) || '¼'; };
+function scaleQty(q, factor) {
+  if (!q || factor === 1) return q;
+  return q.replace(/(\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+))?|½|¼|¾/, (m, a, b) => {
+    const v = m === '½' ? 0.5 : m === '¼' ? 0.25 : m === '¾' ? 0.75 : b ? parseFloat(a) / parseFloat(b) : parseFloat(a.replace(',', '.'));
+    return fmtQty(v * factor);
+  });
+}
+function parseIngLine(line) {
+  const m = line.match(/^\s*((?:\d+(?:[.,]\d+)?(?:\s*\/\s*\d+)?|½|¼|¾)\s*(?:g|kg|ml|l|EL|TL|Stück|Stk\.?|Prisen?|Dosen?|Bund|Handvoll|Scheiben?|Zehen?|Becher|Pck\.?|Packung(?:en)?|Tassen?)?\.?)\s+(.+)$/i);
+  return m ? [m[2].trim(), m[1].trim()] : [line.trim(), ''];
+}
 function recipeAllowed(r) {
   const s = cs();
   if ((s.excludedRecipes || []).includes(r.id)) return false;
@@ -216,7 +336,7 @@ function recipeAllowed(r) {
   if (r.ing.some(([n]) => (s.excludedIngredients || []).includes(n))) return false;
   return true;
 }
-const allowedRecipes = (meal) => D.RECIPES.filter(r => (!meal || r.meal === meal) && recipeAllowed(r));
+const allowedRecipes = (meal) => allRecipes().filter(r => (!meal || r.meal === meal) && recipeAllowed(r));
 function recipeOfDay(meal, date = today()) {
   const list = allowedRecipes(meal); if (!list.length) return null;
   return pick(list, S.couple.id + '|r|' + meal + date);
@@ -230,7 +350,7 @@ function generatePlan(wk) {
 function mealPlan() {
   const wk = weekStart(today()); const mp = cs().mealPlan;
   if (mp && mp.week === wk) {
-    const ids = mp.ids.filter(id => { const r = D.RECIPES.find(x => x.id === id); return r && recipeAllowed(r); });
+    const ids = mp.ids.filter(id => { const r = allRecipes().find(x => x.id === id); return r && recipeAllowed(r); });
     const extra = generatePlan(wk).filter(id => !ids.includes(id));
     while (ids.length < 4 && extra.length) ids.push(extra.shift());
     return ids;
@@ -272,7 +392,8 @@ function onRemoteChange(table, ev, row) {
   if (ev !== 'INSERT') return;
   arr.push(row);
   if (table === 'completions' && row.user_id !== S.user.id) toast(`${S.partner?.avatar || ''} ${esc(S.partner?.name || '')} ${esc(describe(row))}`);
-  if (table === 'nudges' && row.to_user === S.user.id) toast(`👋 ${esc(S.partner?.name || '')}: ${esc(row.message)}`, 5000);
+  if (table === 'nudges' && row.type === 'reaction') { if (row.to_user === S.user.id && row.from_user !== S.user.id) toast(`${esc(row.emoji)} ${esc(S.partner?.name || '')} reagiert auf deinen Eintrag`); }
+  else if (table === 'nudges' && row.to_user === S.user.id) toast(`👋 ${esc(S.partner?.name || '')}: ${esc(row.message)}`, 5000);
   if (table === 'rewards' && row.created_by !== S.user.id) toast(`🎁 Neue Belohnung: ${esc(row.title)}`);
   if (table === 'custom_challenges' && row.created_by !== S.user.id) toast(`🎯 Neue Challenge: ${esc(row.title)}`);
   scheduleRender();
@@ -281,8 +402,11 @@ function onRemoteChange(table, ev, row) {
 function describe(r) {
   if (r.kind === 'daily') { const ex = D.EXERCISES[r.key]; return `hat die Tages-Challenge geschafft (${fmtNum(r.amount)} ${ex ? (ex.unit === 'sec' ? 'Sek. ' : '') + ex.name : ''}) 💪`; }
   if (r.kind === 'habit') { const h = D.HABITS.find(x => x.id === r.key); return `hat die Gewohnheit erledigt: ${h ? h.emoji + ' ' + h.title : ''}`; }
+  if (r.kind === 'daily' && r.key === 'stretch') return 'hat den Dehn-Sonntag geschafft 🧘';
+  if (r.kind === 'program') { const P = D.PROGRAMS.find(x => x.id === r.prog); return `hat Einheit ${r.session} von „${P ? P.name : 'Programm'}“ geschafft 💪`; }
+  if (r.kind === 'event') { const ev = eventOfKey(r.key); return ev ? `hat ${ev.e.emoji} ${ev.e.door} ${ev.n} geschafft: ${ev.text}` : 'hat eine Event-Challenge geschafft 🎁'; }
   if (r.kind === 'sport') return `hat ${fmtNum(r.amount)} Min. ${r.label || 'Sport'} gemacht 🏅`;
-  if (r.kind === 'workout') { const w = D.WORKOUTS.find(x => x.id === r.key); return `hat das Workout „${w ? w.name : r.key}“ gemacht 🔥`; }
+  if (r.kind === 'workout') { const w = D.WORKOUTS.find(x => x.id === r.key); return w && w.stretchOnly ? `hat „${w.name}“ gemacht 🧘` : `hat das ${w ? `Workout „${w.name}“` : 'Zufalls-Workout'} gemacht 🔥`; }
   if (r.kind === 'log') { const a = D.EXERCISES[r.key] || D.ACTIVITIES[r.key]; if (!a) return `hat ${fmtNum(r.amount)} eingetragen`;
     const label = a.unit === 'steps' ? 'Schritte' : a.unit === 'reps' ? a.name : D.UNIT_LABEL[a.unit] + ' ' + a.name;
     return `hat ${fmtNum(r.amount)} ${label} eingetragen`; }
@@ -416,6 +540,16 @@ function bar(parts, target) {
 // ================================================================
 //  Tab: Heute
 // ================================================================
+function reactionsHtml(r) {
+  const latest = new Map();
+  S.nudges.filter(n => n.type === 'reaction' && n.target === r.id).sort((a, b) => a.created_at.localeCompare(b.created_at)).forEach(n => latest.set(n.from_user, n));
+  const list = [...latest.values()];
+  const canReact = r.user_id !== S.user.id;
+  if (!list.length && !canReact) return '';
+  return `<span class="reacts">${list.map(n => `<i>${esc(n.emoji)}<em>${esc(avatarOf(n.from_user))}</em></i>`).join('')}
+    ${canReact ? `<button class="rbtn" data-act="reactOpen" data-id="${r.id}" aria-label="Reagieren">${S.reactOpen === r.id ? '✕' : '☺︎+'}</button>` : ''}</span>
+    ${S.reactOpen === r.id ? `<span class="rpick">${D.REACTIONS.map(e => `<button data-act="react" data-id="${r.id}" data-e="${e}">${e}</button>`).join('')}</span>` : ''}`;
+}
 function renderToday(stats) {
   const t = today(), dc = dailyChallenge(t), hb = dailyHabit(t);
   const done = (uid, kind) => S.completions.find(r => r.user_id === uid && r.kind === kind && r.date === t);
@@ -430,7 +564,7 @@ function renderToday(stats) {
   const dPa = pid ? metricValue(duel.metric, rows.filter(r => r.user_id === pid)) : 0;
   const daysLeft = daysBetween(t, addDays(wk, 6));
   const greet = new Date().getHours() < 11 ? 'Guten Morgen' : new Date().getHours() < 18 ? 'Hallo' : 'Guten Abend';
-  const lastNudge = S.nudges.filter(n => n.to_user === S.user.id).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  const lastNudge = S.nudges.filter(n => n.to_user === S.user.id && n.type !== 'reaction').sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   const feed = S.completions.filter(r => !String(r.id).startsWith('tmp')).slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 8);
   const myJokerUsed = rows.some(r => r.user_id === S.user.id && r.kind === 'joker');
   const myDates = activeDates(S.user.id);
@@ -455,18 +589,20 @@ function renderToday(stats) {
     ${S.partner ? ring(paTodayPct, S.partner.name, S.partner.avatar, 'pa') : ring(0, '…', '❔', 'pa')}
   </div>
 
+  ${reviewCard()}
+
   ${lastNudge && (Date.now() - new Date(lastNudge.created_at)) < 6 * 3600e3 ? `<div class="card nudge-in">👋 <b>${esc(S.partner?.name)}</b>: ${esc(lastNudge.message)} <small class="muted">${timeAgo(lastNudge.created_at)}</small></div>` : ''}
 
   <div class="card challenge ${myD ? 'is-done' : ''}">
     <div class="card-h"><span class="tag">Tages-Challenge</span><span class="pts">+${POINTS.daily}</span></div>
     <h2>${dc.ex.emoji} ${esc(dc.title)}</h2>
-    <details><summary>So geht's</summary><p>${esc(dc.ex.how)}</p><p class="muted">Leichter: ${esc(dc.ex.easier)}</p></details>
+    <details ${dc.stretch ? 'open' : ''}><summary>So geht's</summary><p>${esc(dc.ex.how)}</p><p class="muted">Leichter: ${esc(dc.ex.easier)}</p></details>
     <div class="status">
       <span class="who me">${myD ? '✅' : '⏳'} Du</span>
       ${S.partner ? `<span class="who pa">${paD ? '✅' : '⏳'} ${esc(S.partner.name)}</span>` : ''}
     </div>
     ${myD ? `<button class="btn ghost small" data-act="undo" data-id="${myD.id}">Rückgängig</button>`
-      : `<button class="btn" data-act="doDaily">Geschafft! 💪</button>`}
+      : `${dc.stretch ? '<button class="btn green" data-act="workout" data-id="stretch">🧘 Dehn-Routine starten</button>' : ''}<button class="btn ${dc.stretch ? 'ghost' : ''}" data-act="doDaily">${dc.stretch ? 'Schon gedehnt ✓' : 'Geschafft! 💪'}</button>`}
     ${myD && paD ? '<p class="bonus">🤝 Beide geschafft: +10 Team-Bonus für jeden!</p>' : ''}
   </div>
 
@@ -481,12 +617,17 @@ function renderToday(stats) {
       : `<button class="btn green" data-act="doHabit">Erledigt ✓</button>`}
   </div>
 
+  ${eventCard()}
+  ${programState() ? programCard() : ''}
+
   <div class="quick">
     <button class="qbtn" data-act="openLog">➕<span>Eintragen</span></button>
     <button class="qbtn" data-act="nudge" ${S.partner ? '' : 'disabled'}>👋<span>Anstupsen</span></button>
     <button class="qbtn" data-act="tab" data-tab="training">▶️<span>Workout</span></button>
     <button class="qbtn" data-act="openJoker" ${jokerUseful ? '' : 'disabled'}>🃏<span>Joker</span></button>
   </div>
+
+  ${tipCard()}
 
   <div class="card">
     <div class="card-h"><span class="tag purple">Wochenziel · Team</span><span class="muted small">noch ${daysLeft} ${daysLeft === 1 ? 'Tag' : 'Tage'}</span></div>
@@ -510,7 +651,7 @@ function renderToday(stats) {
     <div class="card-h"><span class="tag gray">Was zuletzt passiert ist</span></div>
     ${feed.length ? `<ul class="feed">${feed.map(r => `<li class="${cls(r.user_id)}">
       <span class="fav">${esc(avatarOf(r.user_id))}</span>
-      <span class="ftxt"><b>${esc(nameOf(r.user_id))}</b> ${esc(r.user_id === S.user.id ? describe(r).replace(/^hat /, 'hast ') : describe(r))}<small>${timeAgo(r.created_at)}</small></span>
+      <span class="ftxt"><b>${esc(nameOf(r.user_id))}</b> ${esc(r.user_id === S.user.id ? describe(r).replace(/^hat /, 'hast ') : describe(r))}<small>${timeAgo(r.created_at)}</small>${reactionsHtml(r)}</span>
       ${r.user_id === S.user.id && r.date === t ? `<button class="x" data-act="undo" data-id="${r.id}" aria-label="Löschen">×</button>` : ''}
     </li>`).join('')}</ul>` : '<p class="muted">Noch nichts los – mach den Anfang! 🚀</p>'}
   </div>`;
@@ -580,7 +721,7 @@ function renderChallenges(stats) {
   <h2 class="sec">Verlauf</h2>
   <div class="card">
     ${weeks.map(w => `<div class="hist">
-      <div class="hist-d">${w.wk === weekStart(t) ? '<b>Diese Woche</b>' : 'Woche ab ' + fmtDay(w.wk)}</div>
+      <div class="hist-d">${w.wk === weekStart(t) ? '<b>Diese Woche</b>' : 'Woche ab ' + fmtDay(w.wk)}${w.finished ? ` · <button class="link inline" data-act="openReview" data-wk="${w.wk}">Rückblick ansehen</button>` : ''}</div>
       <div>${w.goalDone ? '✅' : w.finished ? '❌' : '⏳'} ${esc(w.goal.title)} <small class="muted">(${fmtNum(w.goalVal)}/${fmtNum(w.goal.target)})</small></div>
       <div>⚔️ ${esc(w.duel.title)} <small class="muted">${fmtNum(w.vals[0])} : ${fmtNum(w.vals[1])}</small>
         ${w.finished ? (w.winner === 'tie' ? ' · Unentschieden 🤝' : w.winner ? ` · 🏆 ${esc(nameOf(w.winner))}` : '') : ''}</div>
@@ -592,51 +733,169 @@ function renderChallenges(stats) {
 // ================================================================
 //  Tab: Training
 // ================================================================
-function workoutSteps(w) {
-  const bonus = Math.min(20, (levelAt() - 1) * 5);
-  const steps = [{ type: 'prep', dur: 10 }];
-  for (let r = 0; r < w.rounds; r++) w.exercises.forEach((k, i) => {
-    steps.push({ type: 'work', key: k, dur: w.work + bonus, round: r + 1 });
-    const last = r === w.rounds - 1 && i === w.exercises.length - 1;
-    if (!last) steps.push({ type: 'rest', dur: w.rest, next: r === w.rounds - 1 ? w.exercises[i + 1] : w.exercises[(i + 1) % w.exercises.length] });
+const exOf = k => D.EXERCISES[k] || D.STRETCHES[k] || D.INTERVALS[k] || { name: k, emoji: '•', how: '', easier: '' };
+const fmtClock = s => s >= 60 ? `${Math.floor(s / 60)}:${pad(s % 60)}` : String(s);
+
+function cooldownSteps() {
+  const keys = Object.keys(D.COOLDOWN);
+  const out = [{ type: 'rest', dur: 10, next: keys[0], label: 'Gleich: Cool-down' }];
+  keys.forEach((k, i) => {
+    out.push({ type: 'stretch', key: k, dur: D.COOLDOWN[k], label: 'Cool-down · Dehnen' });
+    if (i < keys.length - 1) out.push({ type: 'rest', dur: 5, next: keys[i + 1], label: 'Wechseln' });
   });
-  return steps;
+  return out;
 }
-const workoutMinutes = w => Math.round(workoutSteps(w).reduce((a, s) => a + s.dur, 0) / 60);
+function workoutSteps(w) {
+  const bonus = w.stretchOnly || w.fixed ? 0 : Math.min(20, (levelAt() - 1) * 5);
+  const steps = [{ type: 'prep', dur: 10, next: w.exercises[0] }];
+  for (let r = 0; r < w.rounds; r++) w.exercises.forEach((k, i) => {
+    steps.push({ type: w.stretchOnly ? 'stretch' : 'work', key: k, dur: w.work + bonus, label: w.stretchOnly ? 'Dehnen – ruhig atmen' : `Runde ${r + 1} von ${w.rounds}` });
+    const last = r === w.rounds - 1 && i === w.exercises.length - 1;
+    if (!last) steps.push({ type: 'rest', dur: w.rest, next: w.exercises[(i + 1) % w.exercises.length], label: w.stretchOnly ? 'Wechseln' : 'Pause' });
+  });
+  return w.stretchOnly || w.noCooldown ? steps : steps.concat(cooldownSteps());
+}
+const stepsMinutes = steps => Math.max(1, Math.round(steps.reduce((a, s) => a + s.dur, 0) / 60));
+const workoutMinutes = w => stepsMinutes(workoutSteps(w));
+
+function randomWorkout(minutes) {
+  const pool = Object.keys(D.EXERCISES);
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const n = minutes <= 5 ? 4 : minutes <= 10 ? 5 : 6;
+  const work = 30 + Math.min(15, (levelAt() - 1) * 3), rest = 15, cool = minutes >= 10;
+  const avail = minutes * 60 - 10 - (cool ? 180 : 0);
+  const rounds = Math.max(1, Math.round(avail / (n * (work + rest))));
+  return { id: 'random', name: `Zufalls-Workout`, rounds, work, rest, fixed: true, noCooldown: !cool, exercises: pool.slice(0, n) };
+}
+
+// ---- Programme ----
+function programState() {
+  const pr = S.me.settings?.program; if (!pr) return null;
+  const P = D.PROGRAMS.find(x => x.id === pr.id); if (!P) return null;
+  const mine = S.completions.filter(r => r.user_id === S.user.id && r.kind === 'program' && r.prog === P.id && r.date >= pr.start);
+  const done = mine.length, total = P.weeks * 3;
+  return { P, done, total, finished: done >= total, week: Math.floor(done / 3) + 1, day: done % 3 + 1,
+    today: mine.some(r => r.date === today()), yesterday: mine.some(r => r.date === addDays(today(), -1)) };
+}
+function programCard() {
+  const st = programState(); if (!st) return '';
+  const { P } = st;
+  if (st.finished) return `<div class="card prog"><div class="card-h"><span class="tag purple">Dein Programm</span></div>
+    <h3>🎓 ${esc(P.name)} – geschafft!</h3><p>Alle ${st.total} Einheiten erledigt. Richtig stark! 🎉</p>
+    <button class="btn block ghost" data-act="programStop">Neues Programm wählen</button></div>`;
+  return `<div class="card prog"><div class="card-h"><span class="tag purple">Dein Programm</span><span class="pts">+${POINTS.program}</span></div>
+    <h3>${P.emoji} ${esc(P.name)}</h3><p class="muted small">Woche ${st.week} von ${P.weeks} · Einheit ${st.day} von 3</p>
+    <div class="mini wide"><i style="width:${st.done / st.total * 100}%"></i></div>
+    ${st.today ? '<p class="small">✅ Heute erledigt – morgen ist Pause 😌</p>'
+      : `${st.yesterday ? '<p class="muted small">Tipp: Zwischen zwei Einheiten besser einen Tag Pause machen.</p>' : ''}<button class="btn block" data-act="programSession">Einheit starten</button>`}
+  </div>`;
+}
+function programSessionSteps(P, st) {
+  const x = P.session(st.week, st.day);
+  if (P.type === 'hold') {
+    const steps = [{ type: 'prep', dur: 10, next: P.key }];
+    x.forEach((sec, i) => { steps.push({ type: 'work', key: P.key, dur: sec, label: `Satz ${i + 1} von ${x.length}` });
+      if (i < x.length - 1) steps.push({ type: 'rest', dur: 60, next: P.key, label: 'Pause' }); });
+    return { steps: steps.concat(cooldownSteps()), amount: x.reduce((a, b) => a + b, 0) };
+  }
+  const steps = [{ type: 'prep', dur: 10, next: 'walkI' }, { type: 'work', key: 'walkI', dur: x.warm * 60, label: 'Aufwärmen' }];
+  for (let i = 0; i < x.reps; i++) {
+    steps.push({ type: 'work', key: 'runI', dur: Math.round(x.run * 60), label: `Laufen ${i + 1} von ${x.reps}` });
+    if (x.walk && i < x.reps - 1) steps.push({ type: 'rest', key: 'walkI', dur: Math.round(x.walk * 60), next: 'runI', label: 'Gehpause' });
+  }
+  steps.push({ type: 'work', key: 'walkI', dur: x.cool * 60, label: 'Auslaufen' });
+  return { steps: steps.concat(cooldownSteps()), amount: Math.round(x.warm + x.run * x.reps + x.walk * Math.max(0, x.reps - 1) + x.cool) };
+}
+function openProgramSession() {
+  const st = programState(); if (!st || st.finished) return;
+  const { P } = st;
+  const meta = { kind: 'program', key: P.key, prog: P.id, session: st.done + 1 };
+  if (P.type !== 'sets') {
+    const { steps, amount } = programSessionSteps(P, st);
+    return startPlayer({ title: `${P.name} · W${st.week}/E${st.day}`, steps, points: POINTS.program, onLog: () => addCompletion({ ...meta, amount }) });
+  }
+  const sets = P.session(st.week, st.day);
+  openSheet(`<h2>${P.emoji} ${esc(P.name)}</h2><p class="muted">Woche ${st.week} · Einheit ${st.day} – ${sets.length} Sätze, dazwischen 60 Sek. Pause</p>
+    <form data-form="programSets" class="form">
+      <div class="sets">${sets.map((n, i) => `<label class="setrow"><input type="checkbox" name="s${i}"><span>Satz ${i + 1}</span><b>${i === sets.length - 1 ? `mind. ${n}` : n} ${exOf(P.key).name}</b></label>`).join('')}</div>
+      <p class="muted small">Letzter Satz: so viele wie sauber möglich.</p>
+      <label>Im letzten Satz geschafft</label><input name="last" type="number" min="0" max="500" value="${sets[sets.length - 1]}" inputmode="numeric">
+      <button type="button" class="btn block ghost" data-act="restTimer" id="restBtn">⏱ 60 Sek. Pause</button>
+      <button class="btn block">Einheit abschließen (+${POINTS.program})</button>
+    </form>
+    <details><summary>So geht's</summary><p>${esc(exOf(P.key).how)}</p><p class="muted">Leichter: ${esc(exOf(P.key).easier)}</p></details>`);
+  S.progSets = { meta, sets };
+}
+let restTimer = null;
+function startRestTimer(btn) {
+  clearInterval(restTimer); let left = 60;
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch {}
+  btn.textContent = `⏱ ${left} Sek. …`;
+  restTimer = setInterval(() => {
+    left--; const b = $('#restBtn'); if (!b) return clearInterval(restTimer);
+    if (left <= 3 && left > 0) beep(660);
+    if (left <= 0) { clearInterval(restTimer); beep(1046, 0.3); b.textContent = '💪 Weiter geht\'s! (nochmal 60 Sek.)'; return; }
+    b.textContent = `⏱ ${left} Sek. …`;
+  }, 1000);
+}
 
 function renderTraining() {
   const myW = S.completions.filter(r => r.kind === 'workout' && r.user_id === S.user.id);
+  const wcard = w => { const n = myW.filter(r => r.key === w.id).length;
+    return `<button class="card wcard ${w.stretchOnly ? 'calm' : ''}" data-act="workout" data-id="${w.id}">
+      <div class="w-emoji">${w.emoji}</div><b>${esc(w.name)}</b>
+      <small>${workoutMinutes(w)} Min · ${esc(w.level)}</small>
+      <p>${esc(w.desc)}</p>${n ? `<span class="badge-n">${n}×</span>` : ''}</button>`; };
+  const st = programState();
   return `
-  <section class="hello"><h1>Training 🏋️</h1><p class="muted">Nur mit dem eigenen Körper. Einfach starten, der Timer führt euch durch.</p></section>
+  <section class="hello"><h1>Training 🏋️</h1><p class="muted">Nur mit dem eigenen Körper. Einfach starten, der Timer führt euch durch – mit Dehnen am Ende.</p></section>
   <button class="card sportcta" data-act="logPick" data-k="sport"><span>🏅</span><div><b>Eigene Sportart eintragen</b><small>Fußball, Klettern, Tennis … zählt wie ein Workout</small></div><i>+${POINTS.sport}</i></button>
-  <div class="grid">
-    ${D.WORKOUTS.map(w => {
-      const n = myW.filter(r => r.key === w.id).length;
-      return `<button class="card wcard" data-act="workout" data-id="${w.id}">
-        <div class="w-emoji">${w.emoji}</div><b>${esc(w.name)}</b>
-        <small>${workoutMinutes(w)} Min · ${esc(w.level)}</small>
-        <p>${esc(w.desc)}</p>${n ? `<span class="badge-n">${n}×</span>` : ''}
-      </button>`;
-    }).join('')}
-  </div>
-  <p class="muted small pad">Tipp: Macht die Workouts zusammen. Jeder trägt sie dann bei sich ein. Ab und zu werden die Übungsphasen automatisch etwas länger.</p>
+  <div class="card"><div class="card-h"><span class="tag">🎲 Zufalls-Workout</span><span class="pts">+${POINTS.workout}</span></div>
+    <p class="small">Wie viel Zeit habt ihr? Die App würfelt die Übungen.</p>
+    <div class="chips">${[5, 10, 15, 20].map(m => `<button class="chip" data-act="randomWorkout" data-m="${m}">${m} Min.</button>`).join('')}</div></div>
+  <h2 class="sec">Workouts</h2>
+  <div class="grid">${D.WORKOUTS.filter(w => !w.stretchOnly).map(wcard).join('')}</div>
+  <h2 class="sec">Dehnen & Erholung 🧘</h2>
+  <div class="grid">${D.WORKOUTS.filter(w => w.stretchOnly).map(wcard).join('')}</div>
+  <p class="muted small pad">Nach jedem Workout kommt automatisch ein kurzes Cool-down mit Dehnübungen.</p>
+  <h2 class="sec">Programme <span class="pill">optional</span></h2>
+  ${st ? programCard() + '<button class="link" data-act="programStop">Programm beenden</button>' : `
+  <p class="muted small pad">Ein fester Plan über 8 Wochen mit 3 Einheiten pro Woche, der langsam schwerer wird. Startet nur, wenn ihr wollt.</p>
+  <div class="card list">${D.PROGRAMS.map(P => `<div class="rcard"><div class="r-emoji">${P.emoji}</div>
+    <div class="r-body"><b>${esc(P.name)}</b><small>${esc(P.desc)}</small></div>
+    <button class="btn small" data-act="programStart" data-id="${P.id}">Starten</button></div>`).join('')}</div>`}
   <h2 class="sec">Übungen</h2>
   <div class="card">
     ${Object.entries(D.EXERCISES).map(([k, e]) => `<details class="ex"><summary>${e.emoji} ${esc(e.name)}</summary>
       <p>${esc(e.how)}</p><p class="muted">Leichter: ${esc(e.easier)}</p></details>`).join('')}
+  </div>
+  <h2 class="sec">Dehnübungen</h2>
+  <div class="card">
+    ${Object.entries(D.STRETCHES).map(([k, e]) => `<details class="ex"><summary>${e.emoji} ${esc(e.name)}</summary>
+      <p>${esc(e.how)}</p><p class="muted">Leichter: ${esc(e.easier)}</p></details>`).join('')}
   </div>`;
 }
 
-// Workout-Player
+// ---- Player (Workouts, Programme, Dehnen) ----
 let player = null;
-function startWorkout(id) {
-  const w = D.WORKOUTS.find(x => x.id === id); if (!w) return;
-  player = { w, steps: workoutSteps(w), i: 0, end: 0, left: 0, paused: false, timer: null, wake: null };
+function startPlayer({ title, steps, points, onLog }) {
+  closePlayer();
+  player = { title, steps, points, onLog, i: 0, end: 0, left: 0, paused: false, timer: null, wake: null };
   try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch {}
   const ov = document.createElement('div'); ov.id = 'player'; ov.className = 'player'; document.body.appendChild(ov);
   try { navigator.wakeLock?.request('screen').then(l => player && (player.wake = l)).catch(() => {}); } catch {}
   enterStep(0);
   player.timer = setInterval(tick, 200);
+}
+function startWorkout(id, wObj) {
+  const w = wObj || D.WORKOUTS.find(x => x.id === id); if (!w) return;
+  const minutes = workoutMinutes(w);
+  startPlayer({ title: w.name, steps: workoutSteps(w), points: POINTS.workout, onLog: async () => {
+    await addCompletion({ kind: 'workout', key: w.id, amount: minutes });
+    const t = today();
+    if (w.stretchOnly && dailyChallenge(t).stretch && !S.completions.some(r => r.user_id === S.user.id && r.kind === 'daily' && r.date === t))
+      await addCompletion({ kind: 'daily', key: 'stretch', amount: 0 }, false);
+  } });
 }
 let audioCtx;
 function beep(freq = 880, dur = 0.12) {
@@ -654,6 +913,7 @@ function enterStep(i) {
   const s = player.steps[i];
   player.end = Date.now() + s.dur * 1000; player.left = s.dur;
   if (s.type === 'work') { beep(1046, 0.25); try { navigator.vibrate?.(200); } catch {} }
+  if (s.type === 'stretch') beep(523, 0.3);
   renderPlayer();
 }
 function tick() {
@@ -662,7 +922,7 @@ function tick() {
   if (left !== player.left) {
     player.left = left;
     if (left > 0 && left <= 3) beep(660);
-    const el = $('#p-time'); if (el) el.textContent = left;
+    const el = $('#p-time'); if (el) el.textContent = fmtClock(left);
     const pr = $('#p-prog'); const s = player.steps[player.i];
     if (pr) pr.style.width = (100 * (1 - left / s.dur)) + '%';
   }
@@ -670,20 +930,23 @@ function tick() {
 }
 function renderPlayer() {
   const ov = $('#player'); if (!ov) return;
-  const s = player.steps[player.i], w = player.w;
-  const ex = s.key ? D.EXERCISES[s.key] : null;
-  const nx = s.next ? D.EXERCISES[s.next] : null;
-  const workIdx = player.steps.slice(0, player.i + 1).filter(x => x.type === 'work').length;
-  const workTotal = player.steps.filter(x => x.type === 'work').length;
+  const s = player.steps[player.i];
+  const ex = s.key ? exOf(s.key) : null, nx = s.next ? exOf(s.next) : null;
+  const active = x => x.type === 'work' || x.type === 'stretch';
+  const idx = player.steps.slice(0, player.i + 1).filter(active).length, total = player.steps.filter(active).length;
+  const main = active(s) ? `${ex.emoji} ${esc(ex.name)}` : s.type === 'prep' ? `${nx.emoji} Gleich geht's los`
+    : s.key ? `${ex.emoji} ${esc(ex.name)}` : s.label === 'Wechseln' ? '🔄 Wechseln' : '😮‍💨 Durchatmen';
+  const hint = active(s) ? `${esc(ex.how)}${ex.easier ? `<br><small>Zu schwer? ${esc(ex.easier)}</small>` : ''}`
+    : nx ? `${s.type === 'prep' ? 'Als Erstes' : 'Als Nächstes'}: <b>${nx.emoji} ${esc(nx.name)}</b>` : '';
   ov.className = 'player ' + s.type;
   ov.innerHTML = `
-    <div class="p-top"><button class="p-x" data-act="quitWorkout">✕</button><span>${esc(w.name)}</span><span>${workIdx}/${workTotal}</span></div>
+    <div class="p-top"><button class="p-x" data-act="quitWorkout">✕</button><span>${esc(player.title)}</span><span>${idx}/${total}</span></div>
     <div class="p-body">
-      <div class="p-phase">${s.type === 'prep' ? 'Mach dich bereit' : s.type === 'rest' ? 'Pause' : `Runde ${s.round} von ${w.rounds}`}</div>
-      <div class="p-ex">${s.type === 'work' ? `${ex.emoji} ${esc(ex.name)}` : s.type === 'rest' ? '😮‍💨 Durchatmen' : `${D.EXERCISES[player.steps[1].key].emoji} Gleich geht's los`}</div>
-      <div class="p-time" id="p-time">${player.left}</div>
+      <div class="p-phase">${s.type === 'prep' ? 'Mach dich bereit' : esc(s.label || '')}</div>
+      <div class="p-ex">${main}</div>
+      <div class="p-time" id="p-time">${fmtClock(player.left)}</div>
       <div class="p-bar"><i id="p-prog" style="width:0%"></i></div>
-      <div class="p-hint">${s.type === 'work' ? esc(ex.how) + `<br><small>Zu schwer? ${esc(ex.easier)}</small>` : s.type === 'rest' ? `Als Nächstes: <b>${nx ? nx.emoji + ' ' + esc(nx.name) : ''}</b>` : `Als Erstes: <b>${esc(D.EXERCISES[player.steps[1].key].name)}</b>`}</div>
+      <div class="p-hint">${hint}</div>
     </div>
     <div class="p-ctrl">
       <button class="btn ghost" data-act="pauseWorkout">${player.paused ? '▶️ Weiter' : '⏸ Pause'}</button>
@@ -695,8 +958,8 @@ function finishWorkout() {
   beep(1318, 0.4); confetti();
   const ov = $('#player'); ov.className = 'player finish';
   ov.innerHTML = `<div class="p-body"><div class="p-ex">🎉 Geschafft!</div>
-    <p>${esc(player.w.name)} · ${workoutMinutes(player.w)} Minuten</p>
-    <button class="btn big" data-act="logWorkout">Eintragen (+${POINTS.workout} Punkte)</button>
+    <p>${esc(player.title)} · ${stepsMinutes(player.steps)} Minuten</p>
+    <button class="btn big" data-act="logWorkout">Eintragen (+${player.points} Punkte)</button>
     <button class="btn ghost" data-act="quitWorkout">Schließen</button></div>`;
 }
 function closePlayer() {
@@ -711,14 +974,14 @@ function closePlayer() {
 function recipeCard(r, extra = '') {
   return `<div class="rcard" data-act="recipe" data-id="${r.id}">
     <div class="r-emoji">${r.emoji}</div>
-    <div class="r-body"><b>${esc(r.name)}</b><small>${r.time} Min · ${r.kcal} kcal · ${r.protein} g Eiweiß</small></div>${extra}</div>`;
+    <div class="r-body"><b>${r.own ? '⭐ ' : ''}${esc(r.name)}</b><small>${[r.time && r.time + ' Min', r.kcal && r.kcal + ' kcal', r.protein && r.protein + ' g Eiweiß'].filter(Boolean).join(' · ') || 'Eigenes Rezept'}</small></div>${extra}</div>`;
 }
 function renderFood() {
   const br = recipeOfDay('breakfast'), mn = recipeOfDay('main'), sn = recipeOfDay('snack');
-  const plan = mealPlan().map(id => D.RECIPES.find(r => r.id === id)).filter(Boolean);
+  const plan = mealPlan().map(id => allRecipes().find(r => r.id === id)).filter(Boolean);
   const items = S.shopping_items.slice().sort((a, b) => (!!a.checked - !!b.checked) || a.created_at.localeCompare(b.created_at));
   const f = S.recipeFilter;
-  const all = D.RECIPES.filter(r => f === 'all' || r.meal === f || (f === 'quick' && r.time <= 15) || (f === 'veggie' && !r.tags.includes('fleisch') && !r.tags.includes('fisch')));
+  const all = allRecipes().filter(r => f === 'all' || (f === 'own' && r.own) || r.meal === f || (f === 'quick' && r.time && r.time <= 15) || (f === 'veggie' && !r.tags.includes('fleisch') && !r.tags.includes('fisch')));
   const s = cs();
   const exclCount = (s.excludedRecipes || []).length + (s.excludedTags || []).length + (s.excludedIngredients || []).length;
   return `
@@ -730,7 +993,7 @@ function renderFood() {
     ${sn ? recipeCard(sn, '<span class="tag small green">Snack</span>') : ''}
   </div>
 
-  <h2 class="sec">Wochenplan <button class="btn small ghost" data-act="planToList">🛒 Zutaten → Liste</button></h2>
+  <h2 class="sec">Wochenplan <button class="btn small ghost" data-act="planToList">🛒 Zutaten → Liste (${portions} P.)</button></h2>
   <div class="card list">
     ${plan.map((r, i) => recipeCard(r, `<button class="dice" data-act="reroll" data-i="${i}" aria-label="Neu würfeln">🎲</button>`)).join('') || '<p class="muted">Keine passenden Rezepte – prüft eure Ausschlüsse.</p>'}
   </div>
@@ -745,8 +1008,8 @@ function renderFood() {
     ${!items.length ? '<p class="muted small">Die Liste ist leer. Ihr seht beide dieselbe Liste.</p>' : ''}
   </div>
 
-  <h2 class="sec">Alle Rezepte</h2>
-  <div class="chips">${[['all', 'Alle'], ['breakfast', 'Frühstück'], ['main', 'Hauptgerichte'], ['snack', 'Snacks'], ['quick', '≤ 15 Min'], ['veggie', 'Vegetarisch']]
+  <h2 class="sec">Alle Rezepte <button class="btn small" data-act="newRecipe">+ Eigenes</button></h2>
+  <div class="chips">${[['all', 'Alle'], ['own', '⭐ Eigene'], ['breakfast', 'Frühstück'], ['main', 'Hauptgerichte'], ['snack', 'Snacks'], ['quick', '≤ 15 Min'], ['veggie', 'Vegetarisch']]
     .map(([k, l]) => `<button class="chip ${f === k ? 'on' : ''}" data-act="rfilter" data-f="${k}">${l}</button>`).join('')}</div>
   <div class="card list">${all.map(r => recipeAllowed(r) ? recipeCard(r) : `<div class="rcard off" data-act="recipe" data-id="${r.id}"><div class="r-emoji">🚫</div><div class="r-body"><b>${esc(r.name)}</b><small>ausgeschlossen</small></div></div>`).join('')}</div>
 
@@ -755,27 +1018,28 @@ function renderFood() {
     <p class="muted small">Tippt an, was nie vorgeschlagen werden soll:</p>
     <div class="chips">${Object.entries(D.DIET_TAGS).map(([k, l]) => `<button class="chip ${(s.excludedTags || []).includes(k) ? 'on red' : ''}" data-act="toggleTag" data-k="${k}">${(s.excludedTags || []).includes(k) ? '🚫 ' : ''}${l}</button>`).join('')}</div>
     ${(s.excludedIngredients || []).length ? `<p class="muted small">Zutaten (antippen zum Entfernen):</p><div class="chips">${s.excludedIngredients.map(n => `<button class="chip on red" data-act="unexIng" data-n="${esc(n)}">🚫 ${esc(n)}</button>`).join('')}</div>` : ''}
-    ${(s.excludedRecipes || []).length ? `<p class="muted small">Rezepte (antippen zum Entfernen):</p><div class="chips">${s.excludedRecipes.map(id => { const r = D.RECIPES.find(x => x.id === id); return r ? `<button class="chip on red" data-act="unexRecipe" data-id="${id}">🚫 ${esc(r.name)}</button>` : ''; }).join('')}</div>` : ''}
+    ${(s.excludedRecipes || []).length ? `<p class="muted small">Rezepte (antippen zum Entfernen):</p><div class="chips">${s.excludedRecipes.map(id => { const r = allRecipes().find(x => x.id === id); return r ? `<button class="chip on red" data-act="unexRecipe" data-id="${id}">🚫 ${esc(r.name)}</button>` : ''; }).join('')}</div>` : ''}
     <p class="muted small">Einzelne Rezepte oder Zutaten schließt ihr direkt im Rezept über „Nicht für uns“ aus.</p>
   </div>`;
 }
 
 function openRecipe(id) {
-  const r = D.RECIPES.find(x => x.id === id); if (!r) return;
+  const r = allRecipes().find(x => x.id === id); if (!r) return;
   const ok = recipeAllowed(r);
   openSheet(`
-    <div class="r-head"><span>${r.emoji}</span><div><h2>${esc(r.name)}</h2><p class="muted">${D.MEAL_LABEL[r.meal]} · ${r.time} Min · ca. ${r.kcal} kcal · ${r.protein} g Eiweiß pro Portion</p></div></div>
-    <h3>Zutaten (2 Portionen)</h3>
-    <ul class="ing">${r.ing.map(([n, q]) => `<li><span>${esc(n)}</span><span class="muted">${esc(q)}</span></li>`).join('')}</ul>
+    <div class="r-head"><span>${r.emoji}</span><div><h2>${esc(r.name)}</h2><p class="muted">${r.own ? '⭐ Eigenes Rezept · ' : ''}${D.MEAL_LABEL[r.meal]}${r.time ? ` · ${r.time} Min` : ''}${r.kcal ? ` · ca. ${r.kcal} kcal` : ''}${r.protein ? ` · ${r.protein} g Eiweiß` : ''}${r.kcal || r.protein ? ' pro Portion' : ''}</p></div></div>
+    <div class="porth"><h3>Zutaten</h3><div class="stepper"><button data-act="portions" data-d="-1" data-id="${r.id}" aria-label="Weniger">−</button><b>${portions} ${portions === 1 ? 'Portion' : 'Portionen'}</b><button data-act="portions" data-d="1" data-id="${r.id}" aria-label="Mehr">+</button></div></div>
+    <ul class="ing">${r.ing.map(([n, q]) => `<li><span>${esc(n)}</span><span class="muted">${esc(scaleQty(q, portions / 2))}</span></li>`).join('')}</ul>
     <h3>Zubereitung</h3>
-    <ol class="steps">${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+    ${r.steps.length ? `<ol class="steps">${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : '<p class="muted">Keine Schritte eingetragen.</p>'}
+    ${r.own ? `<div class="row"><button class="btn small ghost" data-act="editRecipe" data-id="${r.id}">✎ Bearbeiten</button><button class="btn small ghost red" data-act="delRecipe" data-id="${r.id}">Löschen</button></div>` : ''}
     <div class="row">
       <button class="btn" data-act="recipeToList" data-id="${r.id}">🛒 Auf die Einkaufsliste</button>
       ${ok ? `<button class="btn ghost red" data-act="excludeMenu" data-id="${r.id}">🚫 Nicht für uns</button>` : `<button class="btn ghost" data-act="unexRecipe" data-id="${r.id}">Wieder erlauben</button>`}
     </div>`);
 }
 function openExcludeMenu(id) {
-  const r = D.RECIPES.find(x => x.id === id);
+  const r = allRecipes().find(x => x.id === id);
   openSheet(`<h2>🚫 Was passt nicht?</h2>
     <button class="btn block" data-act="exRecipe" data-id="${r.id}">Nur dieses Rezept ausblenden</button>
     <p class="muted">…oder eine Zutat nie wieder vorschlagen:</p>
@@ -783,12 +1047,31 @@ function openExcludeMenu(id) {
     <p class="muted">…oder eine ganze Kategorie:</p>
     <div class="chips">${r.tags.map(t => `<button class="chip" data-act="toggleTag" data-k="${t}" data-close="1">${D.DIET_TAGS[t]}</button>`).join('') || '<span class="muted small">–</span>'}</div>`);
 }
+function openRecipeForm(id) {
+  const r = id ? allRecipes().find(x => x.id === id) : null;
+  const EMO = ['🍲', '🥗', '🍝', '🍛', '🥘', '🌯', '🍳', '🥣', '🍗', '🐟', '🥦', '🍠', '🥪', '🍜', '🍕', '🍓'];
+  openSheet(`<h2>${r ? '✎ Rezept bearbeiten' : '⭐ Eigenes Rezept'}</h2>
+    <form data-form="recipe" class="form"><input type="hidden" name="id" value="${r ? r.id : ''}">
+      <label>Name</label><input name="name" required maxlength="60" value="${esc(r?.name || '')}" placeholder="z. B. Omas Linsensuppe">
+      <label>Symbol</label><div class="avatars">${EMO.map((e, i) => `<label><input type="radio" name="emoji" value="${e}" ${(r ? r.emoji === e : i === 0) ? 'checked' : ''}><span>${e}</span></label>`).join('')}</div>
+      <label>Art</label><div class="seg wide">${Object.entries(D.MEAL_LABEL).map(([k, l]) => `<label><input type="radio" name="meal" value="${k}" ${(r ? r.meal === k : k === 'main') ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+      <div class="row3"><div><label>Minuten</label><input name="time" type="number" min="0" max="600" inputmode="numeric" value="${r?.time || ''}"></div>
+        <div><label>kcal/Portion</label><input name="kcal" type="number" min="0" max="3000" inputmode="numeric" value="${r?.kcal || ''}" placeholder="optional"></div>
+        <div><label>Eiweiß g</label><input name="protein" type="number" min="0" max="300" inputmode="numeric" value="${r?.protein || ''}" placeholder="optional"></div></div>
+      <label>Zutaten für 2 Portionen (eine pro Zeile)</label>
+      <textarea name="ing" rows="5" required placeholder="200 g Magerquark&#10;1 Dose Kichererbsen&#10;2 Handvoll Spinat">${esc((r?.ing || []).map(([n, q]) => (q ? q + ' ' : '') + n).join('\n'))}</textarea>
+      <label>Zubereitung (ein Schritt pro Zeile)</label>
+      <textarea name="steps" rows="4" placeholder="Zwiebeln anbraten&#10;…">${esc((r?.steps || []).join('\n'))}</textarea>
+      <label>Enthält (für Ausschlüsse)</label>
+      <div class="chips">${Object.entries(D.DIET_TAGS).map(([k, l]) => `<label class="chip check"><input type="checkbox" name="tag" value="${k}" ${r?.tags?.includes(k) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+      <button class="btn block">Speichern</button></form>`);
+}
 async function addIngredientsToList(recipes) {
-  const merged = new Map();
-  for (const r of recipes) for (const [n, q] of r.ing) merged.set(n, merged.has(n) ? merged.get(n) + ' + ' + q : q);
+  const merged = new Map(), f = portions / 2;
+  for (const r of recipes) for (const [n, q0] of r.ing) { const q = scaleQty(q0, f); merged.set(n, merged.has(n) ? merged.get(n) + ' + ' + q : q); }
   const open = new Set(S.shopping_items.filter(i => !i.checked).map(i => i.text.split(' (')[0].toLowerCase()));
   const toAdd = [...merged].filter(([n]) => !open.has(n.toLowerCase()));
-  await Promise.all(toAdd.map(([n, q]) => insertRow('shopping_items', { text: `${n} (${q})`, checked: false })));
+  await Promise.all(toAdd.map(([n, q]) => insertRow('shopping_items', { text: q ? `${n} (${q})` : n, checked: false })));
   toast(`🛒 ${toAdd.length} Zutaten hinzugefügt`);
 }
 
@@ -1171,6 +1454,15 @@ const actions = {
     const pid = S.partner?.id;
     if (pid && S.completions.some(r => r.user_id === pid && r.kind === 'daily' && r.date === today())) toast('🤝 Ihr habt es beide geschafft! +10 Bonus');
   },
+  doEvent: async () => { const ev = activeEvent(); if (!ev) return; await addCompletion({ kind: 'event', key: ev.key }); confetti(); },
+  dismissReview: d => { try { localStorage.setItem('duo-review-x', d.wk); } catch {} render(); },
+  openReview: d => openSheet(`<h2>📅 Wochenrückblick</h2>${reviewHtml(d.wk)}`),
+  reactOpen: d => { S.reactOpen = S.reactOpen === d.id ? null : d.id; render(); },
+  react: async d => {
+    const r = S.completions.find(x => x.id === d.id); S.reactOpen = null; if (!r) return render();
+    await insertRow('nudges', { type: 'reaction', target: r.id, emoji: d.e, to_user: r.user_id, from_user: S.user.id });
+    if (r.user_id !== S.user.id) api.sendPush({ title: `${d.e} ${S.me.name} reagiert`, body: `auf: ${describe(r)}`, tag: 'reaction' });
+  },
   doHabit: async () => { await addCompletion({ kind: 'habit', key: dailyHabit().id }); confetti(); },
   undo: d => removeCompletion(d.id),
   openLog: () => openLog(),
@@ -1195,10 +1487,16 @@ const actions = {
   },
   skipStep: () => player && enterStep(player.i + 1),
   quitWorkout: () => { if (player && !player.done && !confirm('Workout abbrechen?')) return; closePlayer(); },
-  logWorkout: async () => {
-    const w = player.w; closePlayer();
-    await addCompletion({ kind: 'workout', key: w.id, amount: workoutMinutes(w) });
+  logWorkout: async () => { const fn = player.onLog; closePlayer(); await fn(); },
+  randomWorkout: d => startWorkout(null, randomWorkout(Number(d.m))),
+  programStart: d => {
+    const P = D.PROGRAMS.find(x => x.id === d.id);
+    if (!confirm(`Programm „${P.name}“ starten? 8 Wochen, 3 Einheiten pro Woche. Du kannst es jederzeit beenden.`)) return;
+    setMySettings({ program: { id: P.id, start: today() } }); toast(`${P.emoji} Los geht's!`);
   },
+  programStop: () => { if (confirm('Programm beenden? Deine bisherigen Einheiten bleiben gespeichert.')) setMySettings({ program: null }); },
+  programSession: () => openProgramSession(),
+  restTimer: (d, el) => startRestTimer(el),
   newCustom: openNewCustom,
   customProgress: d => openCustomProgress(d.id),
   delCustom: d => { if (confirm('Challenge löschen?')) deleteRow('custom_challenges', d.id); },
@@ -1219,8 +1517,12 @@ const actions = {
     ids[Number(d.i)] = options[Math.floor(Math.random() * options.length)].id;
     await setCoupleSettings({ mealPlan: { week: weekStart(today()), ids } });
   },
-  planToList: () => addIngredientsToList(mealPlan().map(id => D.RECIPES.find(r => r.id === id)).filter(Boolean)),
-  recipeToList: d => { closeSheet(); addIngredientsToList([D.RECIPES.find(r => r.id === d.id)]); },
+  portions: d => { portions = Math.min(8, Math.max(1, portions + Number(d.d))); try { localStorage.setItem('duo-portions', portions); } catch {} openRecipe(d.id); render(); },
+  newRecipe: () => openRecipeForm(),
+  editRecipe: d => openRecipeForm(d.id),
+  delRecipe: d => { if (!confirm('Rezept löschen?')) return; closeSheet(); setCoupleSettings({ recipes: (cs().recipes || []).filter(r => r.id !== d.id) }); },
+  planToList: () => addIngredientsToList(mealPlan().map(id => allRecipes().find(r => r.id === id)).filter(Boolean)),
+  recipeToList: d => { closeSheet(); addIngredientsToList([allRecipes().find(r => r.id === d.id)]); },
   excludeMenu: d => openExcludeMenu(d.id),
   exRecipe: d => { closeSheet(); setCoupleSettings({ excludedRecipes: [...new Set([...(cs().excludedRecipes || []), d.id])] }); toast('🚫 Rezept ausgeblendet'); },
   unexRecipe: d => { closeSheet(); setCoupleSettings({ excludedRecipes: (cs().excludedRecipes || []).filter(x => x !== d.id) }); },
@@ -1301,6 +1603,25 @@ const forms = {
     closeSheet();
     await addCompletion({ kind: 'log', key: f.key.value, amount, date: f.yesterday.checked ? addDays(today(), -1) : today() });
     toast('✅ Eingetragen');
+  },
+  recipe: async f => {
+    const ing = f.ing.value.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 40).map(parseIngLine);
+    if (!ing.length) throw new Error('Bitte mindestens eine Zutat eintragen.');
+    const id = f.id.value || 'own-' + Date.now().toString(36);
+    const rec = { id, own: true, by: S.user.id, name: f.name.value.trim(), emoji: f.emoji.value, meal: f.meal.value,
+      time: Number(f.time.value) || 0, kcal: Number(f.kcal.value) || 0, protein: Number(f.protein.value) || 0,
+      tags: [...f.querySelectorAll('[name=tag]:checked')].map(x => x.value), ing,
+      steps: f.steps.value.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 30) };
+    closeSheet();
+    await setCoupleSettings({ recipes: [...(cs().recipes || []).filter(r => r.id !== id), rec] });
+    toast(`⭐ „${esc(rec.name)}“ gespeichert`); S.recipeFilter = 'own'; render();
+  },
+  programSets: async f => {
+    if (!S.progSets) return;
+    const { meta, sets } = S.progSets, last = Number(f.last.value) || 0;
+    clearInterval(restTimer); closeSheet();
+    await addCompletion({ ...meta, amount: sets.slice(0, -1).reduce((a, b) => a + b, 0) + last });
+    S.progSets = null; confetti(); toast('💪 Einheit geschafft!');
   },
   custom: async f => {
     closeSheet();

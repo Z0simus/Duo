@@ -70,6 +70,8 @@ export const HABITS = [
   { id: 'veggies',  emoji: '🥦', title: 'Zu jeder Hauptmahlzeit Gemüse' },
   { id: 'sleep',    emoji: '😴', title: 'Vor 23 Uhr im Bett' },
   { id: 'stretch',  emoji: '🧘', title: '10 Minuten dehnen' },
+  { id: 'mstretch', emoji: '🌅', title: 'Morgens 5 Minuten dehnen' },
+  { id: 'poststr',  emoji: '🤸', title: 'Nach dem Sport immer kurz dehnen' },
   { id: 'nosnack',  emoji: '🌙', title: 'Nach 20 Uhr nichts mehr essen' },
   { id: 'steps8k',  emoji: '👟', title: '8.000 Schritte' },
   { id: 'nosoda',   emoji: '🥤', title: 'Keine süßen Getränke' },
@@ -81,12 +83,13 @@ export const HABITS = [
 
 // Wochenziele (Team). metric: {count:[kinds]} | {sum:[keys]} | 'activeDays'
 export const WEEKLY_GOALS = [
-  { id: 'workouts', title: 'Gemeinsam {t}× Sport (Workouts oder eigene Sportart)', metric: { count: ['workout','sport'] }, base: 4, unit: 'Einheiten' },
+  { id: 'workouts', title: 'Gemeinsam {t}× Sport (Workouts oder eigene Sportart)', metric: { count: ['workout','sport','program'] }, base: 4, unit: 'Einheiten' },
   { id: 'squats',   title: 'Zusammen {t} Kniebeugen', metric: { sum: ['squats'] }, base: 200, unit: 'Kniebeugen' },
   { id: 'active',   title: 'Zusammen {t} aktive Tage', metric: 'activeDays', base: 8, unit: 'Tage' },
   { id: 'move',     title: 'Zusammen {t} Minuten Bewegung', metric: { sum: ['walk','run','bike','swim','dance','sport'] }, base: 180, unit: 'Min.' },
   { id: 'dailies',  title: '{t} Tages-Challenges zusammen', metric: { count: ['daily','habit'] }, base: 14, unit: 'Challenges' },
   { id: 'plank',    title: 'Zusammen {t} Sekunden Plank', metric: { sum: ['plank'] }, base: 300, unit: 'Sek.' },
+  { id: 'stretch',  title: 'Gemeinsam {t}× dehnen (Dehn-Workout oder Yoga)', metric: { countKeys: ['stretch', 'morning', 'yoga'] }, base: 3, unit: 'Einheiten' },
 ];
 
 // Duelle der Woche
@@ -96,7 +99,7 @@ export const DUELS = [
   { id: 'plank',   title: 'Wer hält länger Plank (gesamt)?', metric: { sum: ['plank'] }, unit: 'Sek.' },
   { id: 'move',    title: 'Wer bewegt sich mehr (Minuten)?', metric: { sum: ['walk','run','bike','swim','dance','sport'] }, unit: 'Min.' },
   { id: 'active',  title: 'Wer hat mehr aktive Tage?', metric: 'activeDays', unit: 'Tage' },
-  { id: 'workouts',title: 'Wer macht mehr Sporteinheiten?', metric: { count: ['workout','sport'] }, unit: 'Einheiten' },
+  { id: 'workouts',title: 'Wer macht mehr Sporteinheiten?', metric: { count: ['workout','sport','program'] }, unit: 'Einheiten' },
   { id: 'dailies', title: 'Wer erledigt mehr Tages-Challenges?', metric: { count: ['daily','habit'] }, unit: 'Challenges' },
 ];
 
@@ -120,7 +123,103 @@ export const WORKOUTS = [
   { id: 'full', name: 'Ganzkörper 15', emoji: '🔥', level: 'Mittel', rounds: 3, work: 35, rest: 20,
     desc: 'Wenn ihr nach ein paar Wochen mehr wollt.',
     exercises: ['squats','pushups','lunges','climbers','plank','bridge'] },
+  { id: 'stretch', name: 'Dehnen & Entspannen', emoji: '🧘', level: 'Erholung', rounds: 1, work: 40, rest: 5, stretchOnly: true,
+    desc: 'Perfekt für Ruhetage und abends. Löst Verspannungen.',
+    exercises: ['catcow','child','hamstring','quad','hipflexor','butterfly','chest','neck','spinal'] },
+  { id: 'morning', name: 'Morgen-Mobility', emoji: '🌅', level: 'Erholung', rounds: 1, work: 30, rest: 5, stretchOnly: true,
+    desc: 'Sanft wach werden in 6 Minuten.',
+    exercises: ['neck','catcow','spinal','hipflexor','calf','chest','sidebend'] },
 ];
+
+// Dehnübungen (Sekunden halten, ruhig atmen, nie wippen)
+export const STRETCHES = {
+  quad:      { name: 'Oberschenkel vorne', emoji: '🦩', unit: 'sec', how: 'Stehend eine Ferse zum Po ziehen, Knie zeigen nach unten, Hüfte leicht nach vorn. Seite in der Mitte wechseln.', easier: 'An der Wand festhalten.' },
+  hamstring: { name: 'Beinrückseite', emoji: '🙇', unit: 'sec', how: 'Ein Bein gestreckt nach vorne auf die Ferse, Po nach hinten schieben, Rücken gerade nach vorne neigen. Seite in der Mitte wechseln.', easier: 'Knie leicht gebeugt lassen.' },
+  hipflexor: { name: 'Hüftbeuger', emoji: '🧎', unit: 'sec', how: 'Ausfallschritt mit hinterem Knie am Boden, Hüfte sanft nach vorn schieben, Po anspannen. Seite in der Mitte wechseln.', easier: 'Kissen unter das Knie.' },
+  catcow:    { name: 'Katze-Kuh', emoji: '🐈', unit: 'sec', how: 'Vierfüßlerstand: im Wechsel Rücken rund machen (ausatmen) und sanft durchhängen lassen (einatmen).', easier: 'Kleinere Bewegung.' },
+  child:     { name: 'Kindhaltung', emoji: '🧒', unit: 'sec', how: 'Aus dem Fersensitz Oberkörper nach vorne ablegen, Arme lang nach vorne, tief in den Rücken atmen.', easier: 'Knie weiter auseinander.' },
+  chest:     { name: 'Brust & Schultern', emoji: '🚪', unit: 'sec', how: 'Unterarm an Wand oder Türrahmen, Oberkörper sanft wegdrehen. Seite in der Mitte wechseln.', easier: 'Arm tiefer ansetzen.' },
+  neck:      { name: 'Nacken', emoji: '🦒', unit: 'sec', how: 'Kopf langsam zur Seite neigen (Ohr zur Schulter), Schultern locker. Seite in der Mitte wechseln.', easier: 'Nur halb so weit neigen.' },
+  butterfly: { name: 'Schmetterling', emoji: '🦋', unit: 'sec', how: 'Im Sitzen Fußsohlen zusammen, Knie sinken lassen, aufrecht sitzen und leicht nach vorne neigen.', easier: 'Füße weiter weg vom Körper.' },
+  spinal:    { name: 'Wirbelsäulen-Drehung', emoji: '🌀', unit: 'sec', how: 'Rückenlage, Knie angewinkelt zu einer Seite ablegen, Blick zur anderen Seite. Seite in der Mitte wechseln.', easier: 'Kissen unter die Knie.' },
+  calf:      { name: 'Waden', emoji: '🦶', unit: 'sec', how: 'Hände an die Wand, ein Bein nach hinten, Ferse in den Boden drücken. Seite in der Mitte wechseln.', easier: 'Kleinerer Schritt.' },
+  sidebend:  { name: 'Seitneigung', emoji: '🌙', unit: 'sec', how: 'Stehend einen Arm über den Kopf, sanft zur Seite neigen. Seite in der Mitte wechseln.', easier: 'Hand an die Hüfte.' },
+};
+// Nach jedem Workout: kurzes Cool-down
+export const COOLDOWN = { quad: 30, hamstring: 30, hipflexor: 30, chest: 30, child: 30 };
+// Intervalle (für das Lauf-Programm)
+export const INTERVALS = {
+  runI:  { name: 'Locker laufen', emoji: '🏃', how: 'Ganz entspanntes Tempo – du solltest dich noch unterhalten können.', easier: 'Langsamer laufen ist völlig ok!' },
+  walkI: { name: 'Zügig gehen', emoji: '🚶', how: 'Durchatmen, Arme mitschwingen, nicht stehen bleiben.', easier: '' },
+};
+
+// Programme (optional, selbst starten). 3 Einheiten pro Woche.
+const r = Math.round;
+export const PROGRAMS = [
+  { id: 'pushups20', name: 'Auf 20 Liegestütze', emoji: '💪', weeks: 8, key: 'pushups', type: 'sets',
+    desc: 'In 8 Wochen zu 20 Liegestützen. Am Anfang zählen Knie- oder Wand-Liegestütze!',
+    session: (w, d) => { const b = 2 + (w - 1) * 1.5 + (d - 1) * 0.5; return [r(b), r(b * 1.2), r(b), r(b * 0.9), r(b * 1.3)]; } },
+  { id: 'squats50', name: 'Auf 50 Kniebeugen', emoji: '🦵', weeks: 8, key: 'squats', type: 'sets',
+    desc: 'Starke Beine und Po – am Ende 50 Kniebeugen am Stück.',
+    session: (w, d) => { const b = 8 + (w - 1) * 4 + (d - 1); return [r(b), r(b * 1.2), r(b), r(b * 0.9), r(b * 1.3)]; } },
+  { id: 'plank3', name: '3 Minuten Plank', emoji: '🧱', weeks: 8, key: 'plank', type: 'hold',
+    desc: 'Vom ersten Zittern zu 3 Minuten Plank. Super für Bauch und Rücken.',
+    session: (w, d) => { const b = 15 + (w - 1) * 15 + (d - 1) * 5; return [b, b, r(b * 1.2 / 5) * 5]; } },
+  { id: 'run5k', name: 'Von 0 auf 30 Min. Laufen', emoji: '🏃', weeks: 8, key: 'run', type: 'interval',
+    desc: 'Lauf-Einstieg mit Geh-Pausen. Am Ende ca. 30 Minuten am Stück (≈ 5 km).',
+    session: (w, d) => {
+      const run = [1, 1.5, 2, 3, 5, 8, 12, 25][w - 1] + (w < 8 ? (d - 1) * 0.5 : (d - 1) * 2.5);
+      const walk = w < 8 ? Math.max(1, 2.5 - w * 0.25) : 0;
+      const reps = walk ? Math.max(1, r(20 / (run + walk))) : 1;
+      return { warm: 5, run, walk, reps, cool: 5 };
+    } },
+];
+
+// Saison-Events (jedes Jahr wieder). Datum MM-TT.
+export const EVENTS = [
+  { id: 'advent', name: 'Adventskalender', emoji: '🎄', door: 'Türchen', start: '12-01', end: '12-24', items: [
+    '20 Kniebeugen 🦵', '30 Sek. Plank 🧱', '10 Min. Spaziergang im Dunkeln mit Lichtern schauen 🎇', '15 Hampelmänner + 10 Kniebeugen ⭐',
+    '5 Min. Dehnen 🧘', '10 Liegestütze (Knie erlaubt) 💪', 'Tee statt Glühwein ☕', '2 × 30 Sek. Wandsitzen 🪑',
+    '20 Beckenheben 🌉', 'Treppe statt Aufzug, den ganzen Tag 🪜', '3 × 10 Ausfallschritte 🚶', 'Zusammen ein Workout machen 💑',
+    '1 Min. Plank – aufteilen erlaubt 🧱', 'Kein Zucker bis 18 Uhr 🍬', '30 Kniebeugen 🦵', 'Morgen-Mobility (6 Min.) 🌅',
+    '20 Bergsteiger ⛰️', '2 Liter Wasser 💧', '40 Hampelmänner ⭐', 'Weihnachtsmusik an und 10 Min. tanzen 💃',
+    '15 Liegestütze (Knie erlaubt) 💪', 'Gesund backen oder kochen 🍪', '8 Min. Dehnen & Entspannen 🧘', 'Spaziergang an Heiligabend 🎄'] },
+  { id: 'newyear', name: 'Neujahrs-Neustart', emoji: '🎆', door: 'Tag', start: '01-01', end: '01-14', items: [
+    'Langer Neujahrs-Spaziergang 🚶', 'Morgen-Mobility 🌅', '25 Kniebeugen 🦵', '45 Sek. Plank 🧱', '1 Workout deiner Wahl 🏋️', 'Kein Alkohol heute 🚫',
+    '10 Min. Dehnen 🧘', '12 Liegestütze 💪', '2 Liter Wasser 💧', '30 Beckenheben 🌉', 'Eigene Sportart 30 Min. 🏅', '50 Hampelmänner ⭐',
+    'Zusammen kochen – gesund 🥗', 'Neue Bestleistung in irgendwas! 🏆'] },
+  { id: 'spring', name: 'Frühlings-Erwachen', emoji: '🌷', door: 'Tag', start: '03-20', end: '04-02', items: [
+    '20 Min. draußen bewegen 🌳', '20 Kniebeugen 🦵', 'Morgen-Mobility 🌅', '30 Sek. Seitstütz pro Seite 📐', 'Fahrrad statt Auto 🚴', '15 Liegestütze 💪',
+    'Obst statt Süßkram 🍎', '1 Workout 🏋️', '40 Sek. Plank 🧱', 'Treppen-Tag 🪜', '10 Min. Dehnen 🧘', '30 Min. Spaziergang 🚶', '50 Kniebeugen über den Tag 🦵', 'Picknick mit gesundem Essen 🧺'] },
+  { id: 'summer', name: 'Sommer-Fit', emoji: '☀️', door: 'Tag', start: '06-21', end: '07-04', items: [
+    'Morgens vor der Hitze trainieren 🌅', '3 Liter Wasser 💧', '30 Kniebeugen 🦵', 'Schwimmen oder Radfahren 🏊', '1 Min. Plank 🧱', 'Salat-Tag 🥗',
+    '20 Liegestütze 💪', 'Abendspaziergang 🌇', '1 Workout 🏋️', '10 Min. Dehnen 🧘', '40 Hampelmänner ⭐', 'Eigene Sportart draußen 🏅', '30 Beckenheben 🌉', 'Eis? Nur Frozen Joghurt 🍦'] },
+];
+
+// Tipps: Ruhetage & Erholung
+export const REST_TIPS = [
+  'Muskeln wachsen in der Pause, nicht beim Training. Ein Ruhetag gehört zum Plan!',
+  'Muskelkater? Leichte Bewegung (Spazieren, Dehnen) hilft mehr als Liegen.',
+  'Aktiver Ruhetag: 20–30 Min. spazieren und 10 Min. dehnen.',
+  '7–9 Stunden Schlaf sind der beste Fettverbrenner, den es gibt.',
+  'Viel trinken beschleunigt die Erholung – Ziel: 2 Liter Wasser.',
+  'Eiweiß hilft den Muskeln bei der Reparatur: Quark, Eier, Linsen, Hähnchen.',
+  'Dehnen nach dem Sport: jede Position 30 Sek. halten, ruhig atmen, nie wippen.',
+  'Schmerz im Gelenk ist kein Muskelkater – dann lieber pausieren.',
+  'Nach zwei harten Tagen ist ein leichter Tag klüger als ein dritter harter.',
+  'Eine warme Dusche oder ein Bad entspannt verspannte Muskeln.',
+];
+export const TIPS = [
+  'Langsam steigern schlägt alles: lieber jeden Tag ein bisschen als einmal zu viel.',
+  'Trink vor jeder Mahlzeit ein Glas Wasser – das macht schneller satt.',
+  'Plant eure Workouts wie Termine in den Kalender.',
+  'Iss langsam: Das Sättigungsgefühl kommt erst nach ca. 20 Minuten.',
+  'Die richtige Technik ist wichtiger als viele Wiederholungen.',
+  'Ein Spaziergang nach dem Essen senkt den Blutzucker.',
+  'Gemüse zuerst essen: füllt den Magen mit wenig Kalorien.',
+  ...REST_TIPS,
+];
+export const REACTIONS = ['🔥', '💪', '❤️', '👏', '😂'];
 
 // Anstups-Nachrichten
 export const NUDGES = [

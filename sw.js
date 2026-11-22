@@ -1,5 +1,5 @@
 // Service Worker: Offline-Cache + Push-Nachrichten
-const CACHE = 'duo-v3';
+const CACHE = 'duo-v4';
 const SHELL = ['./', './index.html', './style.css', './app.js', './data.js', './backend.js', './crypto.js',
   './vendor/supabase.js', './manifest.webmanifest', './icons/icon-192.png', './icons/apple-touch-icon.png'];
 
