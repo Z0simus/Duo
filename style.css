@@ -296,3 +296,7 @@ textarea:focus { border-color: var(--accent); }
   background: var(--bg); border: 2px dashed var(--accent); border-radius: 14px; padding: 14px 8px; margin: 10px 0; word-break: break-all; user-select: all; }
 .bad { color: var(--red); font-weight: 600; }
 .gate details { margin: 10px 0; text-align: left; }
+.sportcta { display: flex; align-items: center; gap: 12px; width: 100%; border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); text-align: left; cursor: pointer; }
+.sportcta > span { font-size: 32px; }
+.sportcta div { flex: 1; } .sportcta small { display: block; color: var(--muted); font-size: 13px; }
+.sportcta i { font-style: normal; font-weight: 800; color: var(--accent2); }

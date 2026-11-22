@@ -35,7 +35,9 @@ function timeAgo(iso) {
   return `${t.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })} ${hm}`;
 }
 
-const POINTS = { daily: 15, habit: 10, workout: 25, log: 5, custom: 5, joker: 0 };
+const POINTS = { daily: 15, habit: 10, workout: 25, sport: 20, log: 5, custom: 5, joker: 0 };
+// Zählt ein Eintrag zu einer Summen-Metrik? (Übungen, Aktivitäten, eigene Sportart = 'sport')
+const inSum = (r, keys) => ((r.kind === 'daily' || r.kind === 'log') && keys.includes(r.key)) || (r.kind === 'sport' && keys.includes('sport'));
 const LEVEL_XP = 150;
 
 // ================================================================
@@ -97,7 +99,7 @@ const rowsInWeek = (wk) => { const end = addDays(wk, 6); return S.completions.fi
 function metricValue(m, rows) {
   if (m === 'activeDays') return new Set(rows.filter(r => r.kind !== 'joker').map(r => r.user_id + '|' + r.date)).size;
   if (m.count) return rows.filter(r => m.count.includes(r.kind)).length;
-  if (m.sum) return rows.filter(r => (r.kind === 'daily' || r.kind === 'log') && m.sum.includes(r.key))
+  if (m.sum) return rows.filter(r => inSum(r, m.sum))
     .reduce((a, r) => a + Number(r.amount || 0), 0);
   return 0;
 }
@@ -158,7 +160,7 @@ function computeStats() {
     const duelsWon = weeks.filter(w => w.winner === u.id).length;
     const duelsTie = weeks.filter(w => w.winner === 'tie').length;
     xp += duelsWon * 30 + duelsTie * 15;
-    const sum = (keys) => own.filter(r => (r.kind === 'daily' || r.kind === 'log') && keys.includes(r.key)).reduce((a, r) => a + Number(r.amount), 0);
+    const sum = (keys) => own.filter(r => inSum(r, keys)).reduce((a, r) => a + Number(r.amount), 0);
     const count = (k) => own.filter(r => r.kind === k).length;
     const act = activeDates(u.id);
     const hours = own.map(r => new Date(r.created_at).getHours());
@@ -167,8 +169,9 @@ function computeStats() {
       streak: currentStreak(act), maxStreak: maxStreak(act),
       activeDays: [...act].length,
       squats: sum(['squats']), pushups: sum(['pushups']), plank: sum(['plank']),
-      move: sum(['walk', 'run', 'bike', 'swim', 'dance', 'yoga']),
-      workouts: count('workout'), habits: count('habit'), dailies: count('daily'),
+      move: sum(['walk', 'run', 'bike', 'swim', 'dance', 'yoga', 'sport']),
+      sportKinds: new Set(own.filter(r => r.kind === 'sport').map(r => String(r.label || '').toLowerCase())).size,
+      workouts: count('workout') + count('sport'), habits: count('habit'), dailies: count('daily'),
       total: own.filter(r => r.kind !== 'joker').length,
       early: hours.some(h => h < 8), late: hours.some(h => h >= 21),
       goals, duelsWon, weights: S.weights.filter(w => w.user_id === u.id).length,
@@ -180,7 +183,8 @@ function computeStats() {
 
 const BADGES = [
   { id: 'first', emoji: '👣', name: 'Erster Schritt', desc: 'Erste Aktivität eingetragen', ok: s => s.total >= 1 },
-  { id: 'wo1', emoji: '🏋️', name: 'Workout-Neuling', desc: 'Erstes geführtes Workout', ok: s => s.workouts >= 1 },
+  { id: 'wo1', emoji: '🏋️', name: 'Los geht\'s', desc: 'Erste Sporteinheit', ok: s => s.workouts >= 1 },
+  { id: 'multi', emoji: '🏅', name: 'Allrounder', desc: '3 verschiedene eigene Sportarten', ok: s => s.sportKinds >= 3 },
   { id: 'wo10', emoji: '🎖️', name: 'Routine', desc: '10 Workouts', ok: s => s.workouts >= 10 },
   { id: 'wo50', emoji: '🏅', name: 'Maschine', desc: '50 Workouts', ok: s => s.workouts >= 50 },
   { id: 's3', emoji: '🔥', name: 'Angezündet', desc: '3 Tage am Stück aktiv', ok: s => s.maxStreak >= 3 },
@@ -277,6 +281,7 @@ function onRemoteChange(table, ev, row) {
 function describe(r) {
   if (r.kind === 'daily') { const ex = D.EXERCISES[r.key]; return `hat die Tages-Challenge geschafft (${fmtNum(r.amount)} ${ex ? (ex.unit === 'sec' ? 'Sek. ' : '') + ex.name : ''}) 💪`; }
   if (r.kind === 'habit') { const h = D.HABITS.find(x => x.id === r.key); return `hat die Gewohnheit erledigt: ${h ? h.emoji + ' ' + h.title : ''}`; }
+  if (r.kind === 'sport') return `hat ${fmtNum(r.amount)} Min. ${r.label || 'Sport'} gemacht 🏅`;
   if (r.kind === 'workout') { const w = D.WORKOUTS.find(x => x.id === r.key); return `hat das Workout „${w ? w.name : r.key}“ gemacht 🔥`; }
   if (r.kind === 'log') { const a = D.EXERCISES[r.key] || D.ACTIVITIES[r.key]; if (!a) return `hat ${fmtNum(r.amount)} eingetragen`;
     const label = a.unit === 'steps' ? 'Schritte' : a.unit === 'reps' ? a.name : D.UNIT_LABEL[a.unit] + ' ' + a.name;
@@ -505,7 +510,7 @@ function renderToday(stats) {
     <div class="card-h"><span class="tag gray">Was zuletzt passiert ist</span></div>
     ${feed.length ? `<ul class="feed">${feed.map(r => `<li class="${cls(r.user_id)}">
       <span class="fav">${esc(avatarOf(r.user_id))}</span>
-      <span class="ftxt"><b>${esc(nameOf(r.user_id))}</b> ${esc(describe(r))}<small>${timeAgo(r.created_at)}</small></span>
+      <span class="ftxt"><b>${esc(nameOf(r.user_id))}</b> ${esc(r.user_id === S.user.id ? describe(r).replace(/^hat /, 'hast ') : describe(r))}<small>${timeAgo(r.created_at)}</small></span>
       ${r.user_id === S.user.id && r.date === t ? `<button class="x" data-act="undo" data-id="${r.id}" aria-label="Löschen">×</button>` : ''}
     </li>`).join('')}</ul>` : '<p class="muted">Noch nichts los – mach den Anfang! 🚀</p>'}
   </div>`;
@@ -603,6 +608,7 @@ function renderTraining() {
   const myW = S.completions.filter(r => r.kind === 'workout' && r.user_id === S.user.id);
   return `
   <section class="hello"><h1>Training 🏋️</h1><p class="muted">Nur mit dem eigenen Körper. Einfach starten, der Timer führt euch durch.</p></section>
+  <button class="card sportcta" data-act="logPick" data-k="sport"><span>🏅</span><div><b>Eigene Sportart eintragen</b><small>Fußball, Klettern, Tennis … zählt wie ein Workout</small></div><i>+${POINTS.sport}</i></button>
   <div class="grid">
     ${D.WORKOUTS.map(w => {
       const n = myW.filter(r => r.key === w.id).length;
@@ -816,7 +822,7 @@ function renderUs(stats) {
     <div class="p-av">${esc(p.avatar)}</div><b>${esc(c === 'me' ? 'Du' : p.name)}</b>
     <div class="lvl">Level ${s.level}</div><div class="mini"><i style="width:${s.levelProgress * 100}%"></i></div>
     <small>${fmtNum(s.xp)} XP · 🔥 ${s.streak} · 🏅 ${BADGES.filter(b => b.ok(s)).length}</small></div>`;
-  const rowsT = [['🦵 Kniebeugen', 'squats'], ['💪 Liegestütze', 'pushups'], ['🧱 Plank (Sek.)', 'plank'], ['🏋️ Workouts', 'workouts'], ['🚶 Bewegung (Min.)', 'move'], ['📅 Aktive Tage', 'activeDays'], ['🏆 Längste Serie', 'maxStreak']];
+  const rowsT = [['🦵 Kniebeugen', 'squats'], ['💪 Liegestütze', 'pushups'], ['🧱 Plank (Sek.)', 'plank'], ['🏋️ Workouts & Sport', 'workouts'], ['🚶 Bewegung (Min.)', 'move'], ['📅 Aktive Tage', 'activeDays'], ['🏆 Längste Serie', 'maxStreak']];
   const myWeights = S.weights.filter(w => w.user_id === S.user.id).sort((a, b) => b.date.localeCompare(a.date));
   const ms = S.me.settings || {};
   return `
@@ -874,13 +880,31 @@ function openSheet(html) {
 }
 function closeSheet() { $('#sheet').classList.remove('open'); $('#sheet').innerHTML = ''; document.body.classList.remove('noscroll'); }
 
+function openSportForm() {
+  const mine = S.completions.filter(r => r.kind === 'sport' && r.label).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(r => r.label);
+  const names = [...new Map([...mine, ...D.SPORT_SUGGESTIONS].map(n => [n.toLowerCase(), n])).values()].slice(0, 16);
+  return `<form data-form="sport" class="logform">
+      <label>Welche Sportart?</label>
+      <input name="label" required maxlength="30" placeholder="z. B. Fußball, Klettern, Tennis" autocomplete="off" autofocus>
+      <div class="chips">${names.map(n => `<button type="button" class="chip" data-act="sportPick" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+      <label>Wie lange? (Minuten)</label>
+      <input name="amount" type="number" min="1" max="600" inputmode="numeric" required placeholder="Minuten">
+      <div class="chips">${[20, 30, 45, 60, 90].map(q => `<button type="button" class="chip" data-act="sportQuick" data-v="${q}">${q} Min.</button>`).join('')}</div>
+      <label class="toggle"><input type="checkbox" name="yesterday"> War gestern</label>
+      <button class="btn block">Eintragen (+${POINTS.sport})</button>
+      <p class="muted small">Zählt wie ein Workout: für Wochenziel, Duelle, Serie und Abzeichen.</p>
+    </form>`;
+}
+
 function openLog(sel) {
   const opts = [...Object.entries(D.EXERCISES), ...Object.entries(D.ACTIVITIES)];
   const cur = sel || 'squats';
+  const chips = `<div class="chips scroll"><button class="chip ${cur === 'sport' ? 'on' : ''}" data-act="logPick" data-k="sport">🏅 Eigene Sportart</button>${opts.map(([k, a]) => `<button class="chip ${k === cur ? 'on' : ''}" data-act="logPick" data-k="${k}">${a.emoji} ${esc(a.name)}</button>`).join('')}</div>`;
+  if (cur === 'sport') return openSheet(`<h2>➕ Aktivität eintragen</h2>${chips}${openSportForm()}`);
   const item = D.EXERCISES[cur] || D.ACTIVITIES[cur];
   const quick = item.unit === 'min' ? [10, 20, 30, 45] : item.unit === 'sec' ? [20, 30, 45, 60] : item.unit === 'steps' ? [3000, 5000, 8000, 10000] : [10, 15, 20, 30];
   openSheet(`<h2>➕ Aktivität eintragen</h2>
-    <div class="chips scroll">${opts.map(([k, a]) => `<button class="chip ${k === cur ? 'on' : ''}" data-act="logPick" data-k="${k}">${a.emoji} ${esc(a.name)}</button>`).join('')}</div>
+    ${chips}
     <form data-form="log" class="logform">
       <input type="hidden" name="key" value="${cur}">
       <label>${D.UNIT_LABEL[item.unit]}</label>
@@ -1152,6 +1176,8 @@ const actions = {
   openLog: () => openLog(),
   logPick: d => openLog(d.k),
   logQuick: d => { const i = $('[data-form=log] [name=amount]'); i.value = d.v; },
+  sportPick: d => { const i = $('[data-form=sport] [name=label]'); i.value = d.v; $('[data-form=sport] [name=amount]').focus(); },
+  sportQuick: d => { $('[data-form=sport] [name=amount]').value = d.v; },
   openJoker,
   useJoker: async d => { closeSheet(); await addCompletion({ kind: 'joker', date: d.d }, false); toast('🃏 Joker eingesetzt – deine Serie bleibt!'); },
   nudge: async () => {
@@ -1263,6 +1289,13 @@ const forms = {
     await start(cfg);
   },
   shop: async f => { const text = f.text.value.trim(); if (!text) return; f.text.value = ''; await insertRow('shopping_items', { text, checked: false }); f.text?.focus(); },
+  sport: async f => {
+    const label = f.label.value.trim().slice(0, 30), amount = Number(f.amount.value);
+    if (!label || !(amount > 0)) return;
+    closeSheet();
+    await addCompletion({ kind: 'sport', key: 'sport', label, amount, date: f.yesterday.checked ? addDays(today(), -1) : today() });
+    confetti(); toast(`🏅 ${esc(label)} eingetragen!`);
+  },
   log: async f => {
     const amount = Number(f.amount.value); if (!(amount > 0)) return;
     closeSheet();

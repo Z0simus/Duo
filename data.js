@@ -52,6 +52,10 @@ export const ACTIVITIES = {
   steps: { name: 'Schritte', emoji: '👟', unit: 'steps' },
 };
 
+// Vorschläge für „Eigene Sportart“ (frei eingebbar)
+export const SPORT_SUGGESTIONS = ['Fußball', 'Tennis', 'Klettern', 'Bouldern', 'Badminton', 'Volleyball', 'Basketball',
+  'Pilates', 'Zumba', 'Boxen', 'Tischtennis', 'Inlineskaten', 'Wandern', 'Kampfsport', 'Rudern', 'Reiten'];
+
 export const UNIT_LABEL = { reps: 'Wdh.', sec: 'Sek.', min: 'Min.', steps: 'Schritte' };
 
 // Exercises that work for the daily challenge (3 Sätze)
@@ -77,10 +81,10 @@ export const HABITS = [
 
 // Wochenziele (Team). metric: {count:[kinds]} | {sum:[keys]} | 'activeDays'
 export const WEEKLY_GOALS = [
-  { id: 'workouts', title: 'Gemeinsam {t} Workouts', metric: { count: ['workout'] }, base: 4, unit: 'Workouts' },
+  { id: 'workouts', title: 'Gemeinsam {t}× Sport (Workouts oder eigene Sportart)', metric: { count: ['workout','sport'] }, base: 4, unit: 'Einheiten' },
   { id: 'squats',   title: 'Zusammen {t} Kniebeugen', metric: { sum: ['squats'] }, base: 200, unit: 'Kniebeugen' },
   { id: 'active',   title: 'Zusammen {t} aktive Tage', metric: 'activeDays', base: 8, unit: 'Tage' },
-  { id: 'move',     title: '{t} Minuten draußen bewegen', metric: { sum: ['walk','run','bike','swim','dance'] }, base: 180, unit: 'Min.' },
+  { id: 'move',     title: 'Zusammen {t} Minuten Bewegung', metric: { sum: ['walk','run','bike','swim','dance','sport'] }, base: 180, unit: 'Min.' },
   { id: 'dailies',  title: '{t} Tages-Challenges zusammen', metric: { count: ['daily','habit'] }, base: 14, unit: 'Challenges' },
   { id: 'plank',    title: 'Zusammen {t} Sekunden Plank', metric: { sum: ['plank'] }, base: 300, unit: 'Sek.' },
 ];
@@ -90,9 +94,9 @@ export const DUELS = [
   { id: 'pushups', title: 'Wer schafft mehr Liegestütze?', metric: { sum: ['pushups'] }, unit: 'Liegestütze' },
   { id: 'squats',  title: 'Wer macht mehr Kniebeugen?', metric: { sum: ['squats'] }, unit: 'Kniebeugen' },
   { id: 'plank',   title: 'Wer hält länger Plank (gesamt)?', metric: { sum: ['plank'] }, unit: 'Sek.' },
-  { id: 'move',    title: 'Wer bewegt sich mehr draußen?', metric: { sum: ['walk','run','bike','swim','dance'] }, unit: 'Min.' },
+  { id: 'move',    title: 'Wer bewegt sich mehr (Minuten)?', metric: { sum: ['walk','run','bike','swim','dance','sport'] }, unit: 'Min.' },
   { id: 'active',  title: 'Wer hat mehr aktive Tage?', metric: 'activeDays', unit: 'Tage' },
-  { id: 'workouts',title: 'Wer macht mehr Workouts?', metric: { count: ['workout'] }, unit: 'Workouts' },
+  { id: 'workouts',title: 'Wer macht mehr Sporteinheiten?', metric: { count: ['workout','sport'] }, unit: 'Einheiten' },
   { id: 'dailies', title: 'Wer erledigt mehr Tages-Challenges?', metric: { count: ['daily','habit'] }, unit: 'Challenges' },
 ];
 
