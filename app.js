@@ -235,11 +235,123 @@ function eventOfKey(key) {
   const e = D.EVENTS.find(x => x.id === m[1]); if (!e) return null;
   return { e, n: +m[3], text: e.items[+m[3] - 1] || '' };
 }
+// ---- Adventskalender (eigene Ansicht mit Türchen) ----
+const ADVENT = () => D.EVENTS.find(e => e.id === 'advent');
+const lastEmoji = s => { const m = String(s).match(/\p{Extended_Pictographic}/gu); return m ? m[m.length - 1] : '🎁'; };
+function adventYear() { const t = today(); return t.slice(5) >= '06-01' ? t.slice(0, 4) : String(Number(t.slice(0, 4)) - 1); }
+function adventDayToday() { const t = today(); return t.slice(5, 7) === '12' ? Math.min(25, Number(t.slice(8))) : 0; }
+function adventOrder() {
+  const y = adventYear(); const arr = Array.from({ length: 23 }, (_, i) => i + 1);
+  let seed = hashSeed(S.couple.id + '|advent|' + y);
+  for (let i = arr.length - 1; i > 0; i--) { seed = hashSeed(String(seed)); const j = seed % (i + 1); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+  const pos = 4 + (hashSeed(S.couple.id + y) % 16); arr.splice(pos, 0, 24);   // großes Türchen irgendwo in der Mitte
+  return arr;
+}
+const adventKey = n => `advent-${adventYear()}-${n}`;
+const adventDone = (uid, n) => S.completions.find(r => r.user_id === uid && r.kind === 'event' && r.key === adventKey(n));
+function adventOpened() { try { return new Set(JSON.parse(localStorage.getItem('duo-advent-' + adventYear()) || '[]')); } catch { return new Set(); } }
+function markOpened(n) { const s = adventOpened(); s.add(n); try { localStorage.setItem('duo-advent-' + adventYear(), JSON.stringify([...s])); } catch {} }
+const DOOR_STYLES = ['red', 'green', 'gold', 'blue', 'white'];
+
+function adventCard() {
+  const day = adventDayToday(), E = ADVENT();
+  const cnt = uid => Array.from({ length: 24 }, (_, i) => i + 1).filter(n => adventDone(uid, n)).length;
+  if (!day) return '';
+  if (day > 24) return `<div class="card adventcard"><div class="snowcap"></div><h2>🎄 Frohe Weihnachten!</h2>
+    <p>Ihr habt <b>${cnt(S.user.id)}</b>${S.partner ? ` und <b>${cnt(S.partner.id)}</b>` : ''} von 24 Türchen geschafft.</p>
+    <button class="btn block xmas" data-act="openAdvent">Kalender ansehen</button></div>`;
+  const mine = adventDone(S.user.id, day), pa = S.partner && adventDone(S.partner.id, day), opened = adventOpened().has(day);
+  return `<div class="card adventcard"><div class="snowcap"></div>
+    <div class="card-h"><span class="tag xmas">🎄 ${esc(E.name)}</span><span class="pts">+${POINTS.event}</span></div>
+    <h2>${mine ? `✅ Türchen ${day} geschafft!` : opened ? `Türchen ${day}: ${esc(E.items[day - 1])}` : `Türchen ${day} wartet auf dich… 🎁`}</h2>
+    <div class="status"><span class="who me">${mine ? '✅' : '⏳'} Du · ${cnt(S.user.id)}/24</span>
+      ${S.partner ? `<span class="who pa">${pa ? '✅' : '⏳'} ${esc(S.partner.name)} · ${cnt(S.partner.id)}/24</span>` : ''}</div>
+    <button class="btn block xmas" data-act="openAdvent">${opened || mine ? 'Kalender öffnen' : '🔍 Türchen suchen & öffnen'}</button></div>`;
+}
+
+function openAdvent() {
+  let ov = $('#advent');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'advent'; ov.className = 'advent'; document.body.appendChild(ov); document.body.classList.add('noscroll'); }
+  renderAdvent();
+}
+function closeAdvent() { $('#advent')?.remove(); if (!$('#sheet').classList.contains('open')) document.body.classList.remove('noscroll'); }
+function renderAdvent(justOpened) {
+  const ov = $('#advent'); if (!ov) return;
+  const E = ADVENT(), day = adventDayToday(), opened = adventOpened();
+  const cnt = uid => Array.from({ length: 24 }, (_, i) => i + 1).filter(n => adventDone(uid, n)).length;
+  const doors = adventOrder().map((n, i) => {
+    const me = adventDone(S.user.id, n), pa = S.partner && adventDone(S.partner.id, n);
+    const isOpen = n <= day && (opened.has(n) || me);
+    const style = n === 24 ? 'gold big' : DOOR_STYLES[hashSeed(S.couple.id + n) % DOOR_STYLES.length];
+    return `<button class="door ${style} ${isOpen ? 'open' : ''} ${n === day ? 'today' : ''} ${n > day ? 'locked' : ''} ${justOpened === n ? 'anim' : ''}"
+        data-act="adventDoor" data-n="${n}" aria-label="Türchen ${n}">
+      <span class="inside">${lastEmoji(E.items[n - 1])}${me ? '<i class="ck me">✓</i>' : ''}${pa ? `<i class="ck pa">${esc(S.partner.avatar)}</i>` : ''}</span>
+      <span class="front"><b>${n}</b></span></button>`;
+  }).join('');
+  ov.innerHTML = `
+    <div class="adv-top"><button class="p-x" data-act="closeAdvent" aria-label="Schließen">✕</button><b>🎄 Adventskalender</b><span></span></div>
+    <div class="adv-scroll">
+      <p class="adv-sub">${day === 0 ? 'Ab dem 1. Dezember öffnet sich jeden Tag ein Türchen. Findet ihr es?' : day > 24 ? 'Frohe Weihnachten! 🎅' : `Heute ist <b>Türchen ${day}</b> dran. Findest du es? 🔍`}</p>
+      <div class="adv-score"><span class="me">${esc(S.me.avatar)} ${cnt(S.user.id)}/24</span>${S.partner ? `<span class="pa">${esc(S.partner.avatar)} ${cnt(S.partner.id)}/24</span>` : ''}</div>
+      <div class="adv-grid">${doors}<div class="door deco">🎄</div><div class="door deco">⛄</div><div class="door deco">⭐</div><div class="door deco">🦌</div></div>
+      <p class="adv-sub small">Verpasste Türchen könnt ihr nachholen. 🎅</p>
+    </div>`;
+}
+function openDoor(n) {
+  const day = adventDayToday();
+  if (!day || n > day) {
+    const el = document.querySelector(`.door[data-n="${n}"]`); el?.classList.remove('shake'); void el?.offsetWidth; el?.classList.add('shake');
+    const wait = day ? n - day : null;
+    return toast(wait ? `🎅 Noch ${wait} ${wait === 1 ? 'Tag' : 'Tage'} Geduld!` : '🎅 Ab dem 1. Dezember geht\'s los!');
+  }
+  const first = !adventOpened().has(n);
+  markOpened(n);
+  if (first) { renderAdvent(n); beep(1318, 0.15); setTimeout(() => beep(1568, 0.2), 140); }
+  setTimeout(() => showDoor(n), first ? 650 : 0);
+}
+function showDoor(n) {
+  const E = ADVENT(), me = adventDone(S.user.id, n), pa = S.partner && adventDone(S.partner.id, n);
+  openSheet(`<div class="doorsheet">
+    <div class="ds-emoji">${lastEmoji(E.items[n - 1])}</div>
+    <p class="ds-num">Türchen ${n}${n < adventDayToday() && !me ? ' · zum Nachholen' : ''}</p>
+    <h2>${esc(E.items[n - 1])}</h2>
+    <div class="ds-surprise">${esc(D.ADVENT_SURPRISES[n - 1])}</div>
+    <div class="status center"><span class="who me">${me ? '✅' : '⏳'} Du</span>${S.partner ? `<span class="who pa">${pa ? '✅' : '⏳'} ${esc(S.partner.name)}</span>` : ''}</div>
+    ${me ? `<button class="btn ghost block" data-act="undo" data-id="${me.id}" data-close="1">Rückgängig</button>`
+      : `<button class="btn block xmas" data-act="doAdvent" data-n="${n}">Geschafft! 🎁 (+${POINTS.event})</button>`}
+  </div>`);
+}
+
+// ---- Winter-Theme (Dezember) ----
+function winterActive() {
+  let off = false; try { off = localStorage.getItem('duo-winter') === 'off'; } catch {}
+  const md = today().slice(5);
+  return !off && md >= '12-01' && md <= '12-26';
+}
+function applyWinter() {
+  const on = S.screen === 'main' && winterActive();
+  document.body.classList.toggle('winter', on);
+  let snow = $('#snow');
+  if (on && !snow && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    snow = document.createElement('div'); snow.id = 'snow'; snow.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 36; i++) {
+      const f = document.createElement('i'); f.textContent = i % 3 ? '•' : '❄';
+      f.style.left = Math.random() * 100 + 'vw'; f.style.fontSize = (6 + Math.random() * 10) + 'px';
+      f.style.animationDuration = (7 + Math.random() * 9) + 's'; f.style.animationDelay = (-Math.random() * 16) + 's';
+      f.style.opacity = 0.35 + Math.random() * 0.5; snow.appendChild(f);
+    }
+    document.body.appendChild(snow);
+  } else if (!on && snow) snow.remove();
+}
+
 function eventCard() {
   const ev = activeEvent();
+  if (ev && ev.e.id === 'advent') return adventCard();
   if (!ev) {
+    if (adventDayToday() === 25) return adventCard();
     const up = upcomingEvent();
-    return up ? `<div class="card event teaser">${up.e.emoji} <b>In ${up.inDays} ${up.inDays === 1 ? 'Tag' : 'Tagen'} startet: ${esc(up.e.name)}!</b><br><span class="muted small">Jeden Tag eine kleine Überraschungs-Challenge für euch zwei.</span></div>` : '';
+    return up ? `<div class="card event teaser ${up.e.id === 'advent' ? 'adventteaser' : ''}">${up.e.emoji} <b>In ${up.inDays} ${up.inDays === 1 ? 'Tag' : 'Tagen'} startet: ${esc(up.e.name)}!</b><br><span class="muted small">${up.e.id === 'advent' ? '24 Türchen, jeden Tag eins zum Suchen und Öffnen.' : 'Jeden Tag eine kleine Überraschungs-Challenge für euch zwei.'}</span>
+      ${up.e.id === 'advent' ? '<button class="btn small ghost" data-act="openAdvent" style="margin-top:8px">👀 Kalender schon mal ansehen</button>' : ''}</div>` : '';
   }
   const t = today(), y = t.slice(0, 4);
   const doneBy = uid => S.completions.find(r => r.user_id === uid && r.kind === 'event' && r.key === ev.key);
@@ -509,6 +621,8 @@ function render() {
     </nav>`;
   window.scrollTo(0, scroll);
   if (S.tab === 'wir') refreshPushButton();
+  applyWinter();
+  if ($('#advent')) renderAdvent();
 }
 function renderTab(stats) {
   switch (S.tab) {
@@ -589,6 +703,7 @@ function renderToday(stats) {
     ${S.partner ? ring(paTodayPct, S.partner.name, S.partner.avatar, 'pa') : ring(0, '…', '❔', 'pa')}
   </div>
 
+  ${eventCard()}
   ${reviewCard()}
 
   ${lastNudge && (Date.now() - new Date(lastNudge.created_at)) < 6 * 3600e3 ? `<div class="card nudge-in">👋 <b>${esc(S.partner?.name)}</b>: ${esc(lastNudge.message)} <small class="muted">${timeAgo(lastNudge.created_at)}</small></div>` : ''}
@@ -617,7 +732,6 @@ function renderToday(stats) {
       : `<button class="btn green" data-act="doHabit">Erledigt ✓</button>`}
   </div>
 
-  ${eventCard()}
   ${programState() ? programCard() : ''}
 
   <div class="quick">
@@ -1142,6 +1256,7 @@ function renderUs(stats) {
     <div class="set"><span>Profil</span><button class="btn small ghost" data-act="editProfile">${esc(S.me.avatar)} ${esc(S.me.name)} ✎</button></div>
     <div class="set"><span>Schwierigkeit</span><div class="seg">${[['leicht', 'Leicht'], ['normal', 'Normal'], ['stark', 'Stark']].map(([k, l]) => `<button class="${(cs().difficulty || 'normal') === k ? 'on' : ''}" data-act="difficulty" data-k="${k}">${l}</button>`).join('')}</div></div>
     <p class="muted small">Gilt für euch beide. Die Challenges werden außerdem alle 2 Wochen automatisch etwas schwerer (aktuell Stufe ${levelAt()} von 8).</p>
+    <label class="toggle"><input type="checkbox" data-act="winterToggle" ${(() => { try { return localStorage.getItem('duo-winter') !== 'off'; } catch { return true; } })() ? 'checked' : ''}> ❄️ Winter-Theme mit Schnee im Dezember</label>
     <div class="set"><span>Push-Nachrichten</span><button class="btn small" data-act="enablePush" id="pushBtn">Aktivieren</button></div>
     <label class="toggle"><input type="checkbox" data-act="notifyActivity" ${ms.notifyActivity !== false ? 'checked' : ''}> Benachrichtige mich, wenn ${esc(S.partner?.name || 'mein Partner')} etwas schafft</label>
     <div class="set"><span>Paar-Code</span><b class="code small">${esc(S.couple.code)}</b></div>
@@ -1454,6 +1569,15 @@ const actions = {
     const pid = S.partner?.id;
     if (pid && S.completions.some(r => r.user_id === pid && r.kind === 'daily' && r.date === today())) toast('🤝 Ihr habt es beide geschafft! +10 Bonus');
   },
+  openAdvent: () => openAdvent(),
+  closeAdvent: () => closeAdvent(),
+  adventDoor: d => openDoor(Number(d.n)),
+  doAdvent: async d => {
+    const n = Number(d.n); closeSheet();
+    await addCompletion({ kind: 'event', key: adventKey(n) }); confetti();
+    toast(n === 24 ? '🎄 Frohe Weihnachten! Alle Türchen-Punkte gehören euch!' : `🎁 Türchen ${n} geschafft!`);
+  },
+  winterToggle: (d, el) => { try { localStorage.setItem('duo-winter', el.checked ? 'on' : 'off'); } catch {} render(); },
   doEvent: async () => { const ev = activeEvent(); if (!ev) return; await addCompletion({ kind: 'event', key: ev.key }); confetti(); },
   dismissReview: d => { try { localStorage.setItem('duo-review-x', d.wk); } catch {} render(); },
   openReview: d => openSheet(`<h2>📅 Wochenrückblick</h2>${reviewHtml(d.wk)}`),
@@ -1464,7 +1588,7 @@ const actions = {
     if (r.user_id !== S.user.id) api.sendPush({ title: `${d.e} ${S.me.name} reagiert`, body: `auf: ${describe(r)}`, tag: 'reaction' });
   },
   doHabit: async () => { await addCompletion({ kind: 'habit', key: dailyHabit().id }); confetti(); },
-  undo: d => removeCompletion(d.id),
+  undo: d => { if (d.close) closeSheet(); removeCompletion(d.id); },
   openLog: () => openLog(),
   logPick: d => openLog(d.k),
   logQuick: d => { const i = $('[data-form=log] [name=amount]'); i.value = d.v; },

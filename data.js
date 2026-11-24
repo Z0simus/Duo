@@ -354,3 +354,31 @@ export const RECIPES = [
 export const MEAL_LABEL = { breakfast: 'Frühstück', main: 'Hauptgericht', snack: 'Snack' };
 
 export const AVATARS = ['😀','😎','🦊','🐻','🐼','🐯','🦁','🐨','🐸','🦄','🐙','🌸','⚡','🔥','🌈','🍑'];
+
+// Kleine Überraschungen hinter den Adventstürchen (zusätzlich zur Challenge)
+export const ADVENT_SURPRISES = [
+  '🎁 Der Dezember zählt! Jede kleine Bewegung bringt euch näher ans Ziel.',
+  '🍊 Mandarinen haben nur ca. 40 kcal und viel Vitamin C – perfekter Advents-Snack.',
+  '🕯️ Heute Abend: Kerze an, Handy weg, 10 Minuten nur ihr zwei.',
+  '❄️ Bei Kälte verbrennt der Körper etwas mehr Energie, um warm zu bleiben.',
+  '🎶 Tipp: Eine Weihnachts-Playlist macht jedes Workout leichter.',
+  '🎅 Nikolaus-Bonus: Wer heute zuerst fertig ist, bekommt eine Kleinigkeit in den Schuh!',
+  '☕ Zimt im Tee oder Quark schmeckt nach Weihnachten – ganz ohne Zucker.',
+  '🌟 Halbzeit naht! Ihr seid schon eine Woche dabei. Stolz auf euch!',
+  '🥜 Eine Handvoll Nüsse statt Lebkuchen: sättigt länger, mehr Eiweiß.',
+  '🧣 Spaziergang im Dunkeln? Lichter in der Nachbarschaft anschauen macht doppelt Spaß.',
+  '💤 Mehr Schlaf = weniger Heißhunger auf Plätzchen. Wirklich!',
+  '💑 Macht heute zusammen ein Foto nach dem Training – für später.',
+  '🍪 Plätzchen sind erlaubt – genießt sie bewusst statt nebenbei.',
+  '⛄ Fakt: Schneeschippen verbrennt so viel wie Joggen.',
+  '🎄 Noch 10 Tage! Wer jetzt dranbleibt, startet super ins neue Jahr.',
+  '🧘 Stress vor Weihnachten? 3× tief durchatmen hilft sofort.',
+  '🍵 Warmes Wasser mit Ingwer und Zitrone – wärmt und macht wach.',
+  '🎁 Geschenkidee füreinander: ein gemeinsamer Aktiv-Tag im Januar.',
+  '🥗 Rotkohl ist ein Superfood: viele Ballaststoffe, kaum Kalorien.',
+  '✨ Ihr habt schon fast 3 Wochen durchgezogen. Das ist richtig stark!',
+  '🚶 Nach dem Festessen: 15 Minuten spazieren senkt den Blutzucker.',
+  '🎵 Heute einfach mal zusammen in der Küche tanzen. Zählt als Sport!',
+  '🌙 Morgen ist Heiligabend – genießt die Feiertage, ihr habt es euch verdient.',
+  '🎄 Frohe Weihnachten euch beiden! ❤️ Danke, dass ihr euch gegenseitig motiviert.',
+];
